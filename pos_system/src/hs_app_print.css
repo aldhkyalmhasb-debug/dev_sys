@@ -1,0 +1,417 @@
+
+
+
+
+
+@media screen { /*for view only*/
+    div .print-extra-copy-header {
+        border-top: 1px  dashed #888;
+    }
+
+   
+}
+
+@media screen and (max-width: 700px) {
+    img.qr {
+        margin: 0 auto;
+        width: 90%;
+        height: auto;
+    }
+}
+
+    * {
+        color: #000;
+    }
+
+
+    body {
+        margin: 0;
+        padding: 5px;
+        background: url(none) repeat #fff;
+        width: 100% !important;
+        padding: 30px;
+        border: 0px solid red;
+    }
+
+    div.print-extra-copy-header {
+        padding-top: 30px; /*same as body*/
+    }
+
+    div.full-screen-box {
+        position: relative;
+        left: 0px;
+        right: 0px;
+        border-width: 0px;
+        top: 0px;
+        bottom: 0px;
+        padding: 0px;
+        margin: 0 !important; /*required*/
+        border: 0px solid green;
+    }
+
+    #page {
+        position: relative;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        overflow: visible;
+        overflow-y: visible;
+        padding: 0;
+        border: 0px solid blue;
+    }
+
+
+
+
+
+    .page-content {
+        margin: 0px;
+    }
+
+    a {
+        color: #333;
+    }
+
+    .page-break {
+        display: block;
+        page-break-after: always;
+        border: none;
+        margin: 0;
+        height: auto;
+    }
+
+
+    HR {
+        border-top: 1px solid #000;
+    }
+
+
+
+
+    .rep_tab {
+        vertical-align: middle;
+        border-collapse: collapse;
+        width: 100%;
+        margin: 4px 0px;
+        padding: 4px 0px;
+    }
+
+    table.rep_tab.pos {
+        margin: 0;
+        padding: 0;
+    }
+
+
+    .rep_tab TD.seq, .rep_tab TD.qv {
+        background-image: url(none);
+        background-color: transparent;
+    }
+
+
+    .rep_tab td, .rep_tab th {
+        padding: 1px 5px;
+        border: 1px solid #888;
+    }
+
+    .rep_tab tr.title, .rep_tab tr.title td, .rep-title {
+        font-weight: normal;
+        text-align: center;
+        background-color: transparent;
+        border: none;
+    }
+
+    .rep_tab .r1 {
+        background-color: transparent;
+    }
+
+
+
+
+    .fm-title {
+        padding: 3px 0px;
+        font-weight: bold;
+        color: #164871;
+        overflow: visible;
+        text-overflow: clip;
+        border: 1px solid #abc;
+        width: 100%;
+        margin: 4px 0px;
+        background-color: transparent;
+        border: none;
+        background-color: #eee;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 5px;
+        margin-top: 5px;
+    }
+
+    .easyform td {
+        padding: 2px 6px;
+        border-bottom: 1px dotted #eee;
+    }
+
+
+
+
+
+    .fm-ui-plain-tab {
+        page-break-inside: avoid;
+        box-shadow: none;
+        background-color: transparent;
+    }
+
+    .child-items-list {
+        width: 100%;
+        border: 1px solid #000;
+    }
+
+
+
+
+    #fm_content {
+        border: 1px solid #aaa;
+        padding: 5px;
+        border-radius: 4px;
+    }
+
+    td.tit {
+        font-weight: bold;
+    }
+
+        td.tit.pos {
+            font-weight: normal;
+        }
+
+    .page_header, .page_footer, .fm-footer-links, .icon, .ui-tb, .tip, .fm-tb, .fm-controls, .rep-controls,
+    .hs-trace, .no-print, .fm-ui-plain-title, .page-status-bar, #page_foot, .fm-top-cont {
+        visibility: hidden;
+        display: none;
+    }
+
+    .fm-header {
+        margin-top: 0 !important;
+    }
+
+    .fm-content {
+        border: none !important;
+    }
+
+    TABLE.easyform TR.fld TD.tit {
+        text-align: initial;
+    }
+
+    .scrollable-container {
+        overflow: visible;
+        overflow-y: visible;
+    }
+
+    .no-screen {
+        display: block;
+        visibility: visible;
+    }
+
+
+    .fm-browse-item {
+        width: 100% !important;
+        overflow: visible !important;
+        overflow-y: visible !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+    }
+
+
+
+
+    .child-items-list tr.head td {
+        font-weight: normal;
+        padding: 0;
+        text-indent: 0;
+    }
+
+    a.link_icon.icon_qv {
+        background-image: url(none) !important;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .doc-header, .doc-content, .doc-title, .tit-val, .rep_tab td, .rep_tab th, .child-items-list, .child-items-list td, .child-items-list th, .fm-title, hr {
+        border-color: #000 !important;
+        border-style: solid;
+        color: #000 !important;
+    }
+
+
+
+    table.rep_tab tr.head th {
+        border: 1px solid #000 !important;
+        background: url(none) #fff !important;
+        color: #000 !important;
+        background: url(none) #f0f0f0 !important;
+    }
+
+
+
+    .ui-cont {
+        background-color: none;
+        box-shadow: none;
+        margin: 1px 5px;
+        margin-bottom: 5px;
+        padding: 0;
+        border-radius: 0;
+    }
+
+        .ui-cont ul {
+            margin: 0;
+            padding: 0;
+        }
+
+
+
+        .ui-cont h2:not(.fh) {
+            background-color: #fff;
+            color: #000;
+            border-radius: 0;
+            xdisplay: inline-block;
+            border: none;
+            padding: 1px;
+            margin: 1px;
+            padding-top: 5px;
+        }
+
+            .ui-cont h2:not(.fh)::after {
+                content: ' : ';
+            }
+
+
+
+        .ui-cont h2.fh {
+            display: block;
+            margin-top: 20px;
+            background-color: #fff;
+            color: #000;
+            font-size: 2em;
+            border-top: 2px solid #888;
+            border-bottom: 2px solid #888;
+            text-align: center;
+        }
+
+    @media print {
+        .print-preview, .closeable-box {
+            visibility: hidden;
+            display: none;
+        }
+
+
+        table.rep_tab tr.head th, table.rep_tab thead tr.head th {
+            border: 1px solid #000 !important;
+            background: url(none) #ddd !important;
+            color: #000 !important;
+        }
+
+        .net-amnt {
+            font-size: 13pt;
+        }
+    }
+
+
+    @media all and (max-width: 700px) {
+
+        * {
+            font-size: 9pt;
+            color: #000 !important;
+            font-family: Arial;
+        }
+    }
+
+    /*POS printers*/
+
+    @media print and (max-width: 10cm) {
+
+        *, .note {
+            font-size: 9pt;
+            color: #000 !important;
+            font-family: Arial;
+        }
+
+        body {
+            width: 7cm !important;
+            overflow: scroll;
+            padding: 5px 2px !important;
+            width: auto !important;
+            margin: 0 5% !important;
+        }
+
+        div.print-extra-copy-header {
+            padding-top: 5px !important;
+        }
+
+
+        div, table {
+            margin: 2px 0 !important;
+            padding: 1px !important;
+        }
+
+        td, th {
+            padding: 0 2pt !important;
+            margin: 0;
+            text-indent: 0;
+        }
+
+        page-content {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        table.rep_tab td, table.rep_tab th, .doc-header, .doc-title, .doc-content, hr {
+            border-color: #000 !important;
+            border-style: solid;
+        }
+
+        .key-val {
+            margin-left: 1em;
+        }
+
+        div.key-val-full b {
+            width: 50%;
+            margin-left: 0;
+        }
+
+
+        table.doc-header td {
+            width: auto;
+            max-width: unset;
+        }
+    }
+
+
+
+    .dg201-02.no-light, div.dg-201-02 .no-light,
+    .dg202-02.no-light, div.dg-202-02 .no-light,
+    .dg203-02.no-light, div.dg-203-02 .no-light {
+        visibility: hidden !important;
+        display: none !important;
+        background-color: aquamarine !important;
+    }
+
+
+    .imp-card {
+        text-align: center;
+        font-weight: bold;
+        font-size: 14pt;
+        width: 100%;
+        max-width: 250px;
+        margin: auto;
+        padding: 0;
+    }
+
+        .imp-card img {
+            max-width: 100%;
+            height: auto;
+        }
+
+

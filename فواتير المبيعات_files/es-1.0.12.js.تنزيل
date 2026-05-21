@@ -1,0 +1,5839 @@
+﻿// ***** EasySales *** //
+
+var es_cl_items;
+var es_cl_items_bc; 
+var es_item_units = null;
+
+var use_sale_price = true;
+var es_doc_line_count = 100;
+var is_item_grid = false;
+var is_uni_book = false;
+
+var improve_tax_ui = true; // true
+var use_hp_in_tax = false; // false
+var use_tax_cats = true; // true
+
+var wq_bc_fmt = {
+    len: 13, start: "23", 
+    item_start: 2, item_len : 5,
+    qty_start: 0, qty_len : 0, qty_dec : 0,  
+    price_start: 7, price_len : 5, price_dec : 2
+
+    
+}; // weighted items barcode format (len of each part)
+
+var es = {
+    CC: '01', // company crncy,
+    SC: null, // stock crncy
+    AA: 1, // Amount adjustment (adjust amount to be divisble by AA)
+    force_paid_entry: false,
+    chg_price: false,
+    vu_cost: false, // user has auth to view cost
+    stk_opts: 0,
+    ajax_calls: true, // server AUTO hidden calls thru ajax
+    itm_grp: null, // target item group
+    itm_typ: null, // target item type
+   
+    noAjax: function () {
+        es.ajax_calls = false;
+        log("ajax calls disabled..");
+    },
+
+    isStkOption: function (f) {
+        return (es.stk_opts & f) == f;
+    }
+};
+
+var pd = {
+    SI: 0, // stock impact
+    IQL: 0, // item qty list
+    opts: 0,
+    line_flds: null,
+    auto_disc: 1, // auto discount amount less than
+    VAT: 0, // 1=enable VAT, 2= VAT includes discount
+    vat_in_price: false,
+    line_disc: false, // line discount enabled
+    max_line_qty: 0, // 0= no limit
+
+    hasOption: function (f) {
+        if (pd.opts == 0)
+            return false;
+        return (pd.opts & f) == f;
+    }
+}
+
+
+// FI doc
+var fi_doc_line_count = 100;
+var fi_cl_sub_accs=null;
+
+var FI_LINES_FLD = null;
+
+var use_hp_in_up = true; 
+
+
+enRes.qtys = "Qtys";
+arRes.qtys = "الكميات";
+frRes.qtys = "Qtes";
+
+
+function getLineSeq(obj) {
+    obj = $(obj);
+    if (obj == null || obj.length == 0)
+        return null;
+
+    var id = hs.e.getId(obj);
+    
+    if (hs.isEmpty(id))
+        return null;
+
+    if (id[3] == '_')
+        return id.substr(0, 3);
+    else
+        return id.substr(0, 4);
+}
+
+function adjustLineSeq(seq) {
+    seq = seq.toString();
+
+    if (seq.length == 1)
+        seq = "00" + seq;
+    else
+        if (seq.length == 2)
+            seq = "0" + seq;
+
+
+    return seq;
+}
+
+function getLineDocControlId(lines_fld_key, fld_key, seq) {
+    seq = adjustLineSeq(seq);
+
+    return seq + "_" + lines_fld_key + "_" + fld_key;
+}
+
+var items_fld_mid_name = "_items_";
+
+function get_sub_control_id(fld_key, seq) {
+    seq = adjustLineSeq(seq);
+
+    return seq + items_fld_mid_name + fld_key;
+}
+
+function get_sub_control(fld_key, seq) {
+    seq = adjustLineSeq(seq);
+
+    return $("#" + seq + items_fld_mid_name + fld_key);
+}
+
+
+function get_item_id(obj) {
+    if ($(obj).is("select") || is_item_grid)
+        return $(obj).val();
+    else
+        return $(obj).attr("data-sel_id") || '';
+}
+
+function isPurchInv() {
+    var fm_id = hs.fm.getId();
+    
+    return fm_id == "es-purch-inv" || fm_id == "es-purch-ft";
+}
+
+function isRent() {
+    return hs.fm.getId() == "es-sale-rent";
+}
+
+
+var _items_arr = null;
+function get_item_list() {
+
+    if (_items_arr == null) {
+        var all_items_list = hs.cache.getItem('es_items_list');
+
+        var is_sales = use_sale_price,
+            is_purch = isPurchInv(),
+            is_rent = isRent(),
+            doc_type = get_doc_type(),
+            only_show_items_have_qty = es.isStkOption(0x01) && (pd.SI == -1 || doc_type == "201" || doc_type=="203");
+
+        if (is_rent)
+            is_sales = false;
+        
+        if ((only_show_items_have_qty || is_sales || is_purch) && hs.fm.isAdd()) {
+            var item_sublist = new Array();
+            var i, c = 0;
+            for (i = 0; i < all_items_list.length; i++) {
+                var item_flags = hs.safe.parseInt(all_items_list[i][25]);
+
+                if (is_sales && hs.isFlagEnabled(item_flags, 0x02))
+                    continue; // not for sale
+
+                if (is_purch && hs.isFlagEnabled(item_flags, 0x04))
+                    continue; // not for purch
+
+                if (is_rent && !hs.isFlagEnabled(item_flags, 0x08))
+                    continue; // not for rent
+
+                if (only_show_items_have_qty && (all_items_list[i][4] == "M") && hs.safe.parseFloat(all_items_list[i][24]) <= 0)
+                    continue; // only show items that have qty
+
+
+                item_sublist[c++] = all_items_list[i];
+              //  log("item_flags=" + item_flags + " qty=" + all_items_list[i][24]);
+                
+            };
+
+            _items_arr = item_sublist;
+
+            if (only_show_items_have_qty)
+                hs.msg.toast("سيتم إخفاء الأصناف التي بدون كميات");
+
+            if(is_purch)
+                hs.msg.toast("سيتم إخفاء الأصناف الغير قابلة للشراء");
+        }
+        else {
+            _items_arr = all_items_list;
+        }
+    }
+
+    return _items_arr;
+}
+
+
+function parseItem(a) {
+    return {
+        id: a[0],
+        item_id: a[0],
+        item_name: a[1],
+        item_code: a[2],
+        for_name: a[3],
+        item_type: a[4],
+
+        batch_type: a[5],
+        item_group: a[6],
+        def_purch_unit: a[7],
+        def_sale_unit: a[8],
+        item_crncy: a[9],
+
+        u1_id: a[10],
+        u1_price: a[11],
+        u1_cost: a[12],
+        u1_min_price: a[13],
+
+        u2_id: a[14],
+        u2_price: a[15],
+        u2_cost: a[16],
+        u2_min_price: a[17],
+
+        u3_id: a[18],
+        u3_price: a[19],
+        u3_cost: a[20],
+        u3_min_price: a[21],
+        item_spec: a[22],
+        item_tax_pct: a[23],
+        item_qty_u1: a[24],
+        item_flags: a[25],
+
+        u1_price_s1: a[26],
+        u1_price_s2: a[27],
+        u1_price_s3: a[28],
+        u2_price_s1: a[29],
+        u2_price_s2: a[30],
+        u2_price_s3: a[31],
+        u3_price_s1: a[32],
+        u3_price_s2: a[33],
+        u3_price_s3: a[34]
+    }
+}
+
+function is_multi_units(item) {
+    return !hs.isEmpty(item.u2_id);
+}
+
+function get_item_by_id(item_id) {
+    if (hs.isEmpty(item_id))
+        return null;
+
+    var es_items_list = get_item_list();
+    var i;
+    for (i = 0; i < es_items_list.length; i++) {
+        if (es_items_list[i][0] == item_id)
+            return parseItem(es_items_list[i]);
+    };
+
+    return null;
+}
+
+function get_item_unit_cost(itm, u) { // in SC
+    if (itm != null) {
+        if (u == itm.u1_id) return hs.safe.parseFloat(itm.u1_cost);
+        if (u == itm.u2_id) return hs.safe.parseFloat(itm.u2_cost);
+        if (u == itm.u3_id) return hs.safe.parseFloat(itm.u3_cost);
+    }
+
+    return 0;
+}
+
+function get_item_price_without_tax(itm, pwtax) {
+    if (itm != null) {
+        var tax = calc_tax(pwtax, itm.item_tax_pct, true);
+
+        if (use_hp_in_up)
+            pwtax = hs.safe.roundHP(pwtax - tax);
+        else
+            pwtax = hs.safe.round(pwtax - tax);
+    };
+    return pwtax;
+}
+
+
+function get_item_unit_price_ex(itm, u, pricing) {
+    var up = 0;
+
+    if (u == itm.u1_id) {
+        if (pricing == "S1") up = itm.u1_price_s1;
+        else
+            if (pricing == "S2") up = itm.u1_price_s2;
+            else
+                if (pricing == "S3") up = itm.u1_price_s3;
+                else
+                    up = itm.u1_price;
+    }
+    else
+    if (u == itm.u2_id) {
+        if (pricing == "S1") up = itm.u2_price_s1;
+        else
+            if (pricing == "S2") up = itm.u2_price_s2;
+            else
+                if (pricing == "S3") up = itm.u2_price_s3;
+                else
+                    up = itm.u2_price;
+    }
+        else
+        if (u == itm.u3_id) {
+            if (pricing == "S1") up = itm.u3_price_s1;
+            else
+                if (pricing == "S2") up = itm.u3_price_s2;
+                else
+                    if (pricing == "S3") up = itm.u3_price_s3;
+                    else
+                        up = itm.u3_price;
+            };
+
+    return up;
+
+
+
+}
+
+
+function get_item_unit_price(itm, u, exclude_tax) { // in SC
+
+    var doc_subtype = hs.fm.val("doc_subtype"), pricing = hs.fm.val("pricing") || "";
+    var is_wholesale = doc_subtype == "05" || doc_subtype == "06" || doc_subtype == "07" ||   pricing == "S0";
+    var up = 0;
+
+    if (itm != null) {
+        if (u == itm.u1_id) up = hs.safe.parseFloat(is_wholesale ? itm.u1_min_price : get_item_unit_price_ex(itm, u, pricing));
+        else if (u == itm.u2_id) up = hs.safe.parseFloat(is_wholesale ? itm.u2_min_price : get_item_unit_price_ex(itm, u, pricing));
+        else if (u == itm.u3_id) up = hs.safe.parseFloat(is_wholesale ? itm.u3_min_price : get_item_unit_price_ex(itm, u, pricing));
+
+        if (exclude_tax && up != 0 && pd.vat_in_price) 
+        {
+            var unit_tax = calc_tax(up, itm.item_tax_pct, true);
+            up = up - unit_tax;
+
+            if (use_hp_in_up)
+                up = hs.safe.roundHP(up); // config_me
+            else
+                up = hs.safe.round(up); // config_me
+
+            
+        };
+
+    };
+
+    return up;
+}
+
+function on_upwtax_changed(e) {
+    var seq = getLineSeq(e);
+    var o = dl_e("ux", seq);
+
+    if (hs.e.isReadonly(o))
+        return;
+
+    var upwt = line_upwtax(seq);
+    if (upwt <= 0) {
+        hs.msg.required(o);
+        return;
+    };
+
+
+    var itm = line_item(seq);
+    if (itm == null) {
+        hs.msg.required(dl_e("id", seq));
+        return;
+    };
+       
+
+    var tax = calc_tax(upwt, itm.item_tax_pct, true);
+
+   
+    on_item_price_changed(line_price(seq, use_hp_in_up ? hs.safe.roundHP(upwt - tax) : hs.safe.round(upwt - tax)));
+    
+}
+
+
+function on_withtax_change(e) {
+    var seq = getLineSeq(e);
+    var o = dl_e("rn", seq);
+
+    if (hs.e.isReadonly(o)) 
+        return;
+
+    var stwt = line_subtotal_withtax(seq);
+    if (stwt <= 0) {
+        hs.msg.required(o);
+        return;
+    };
+
+    
+    var itm = line_item(seq);
+    if (itm == null) {
+        hs.msg.required(dl_e("id", seq));
+        return;
+    };
+
+    var qty = line_qty(seq);
+    if (qty <= 0)
+        qty = 1;
+
+    line_upwtax(seq, stwt / qty);
+
+    var tax = calc_tax(stwt, itm.item_tax_pct, true);
+
+    var up = hs.safe.roundHP(stwt - tax) / qty;
+    on_item_price_changed(line_price(seq, up));
+
+}
+
+
+function is_in_csv_codes(codes_csv, code) {
+    if (hs.isEmpty(codes_csv) || hs.isEmpty(code))
+        return false;
+
+    if (!codes_csv.contains(";"))
+        return codes_csv == code;
+
+    codes_csv = ";" + codes_csv + ";"
+    code = ";" + code + ";";
+    return codes_csv.indexOf(code) >= 0;
+}
+
+function get_item_by_code(code) {
+    if (hs.isEmpty(code))
+        return null;
+
+    var es_items_list = get_item_list();
+    var i;
+    for (i = 0; i < es_items_list.length; i++) {
+       //  if (es_items_list[i][2] == code)
+        if (is_in_csv_codes(es_items_list[i][2],code)) // to support multi-barcodes
+            return parseItem(es_items_list[i]);
+    };
+
+    return null;
+}
+
+
+function build_items_codelist_array() {
+
+    try {
+        es_cl_items = es_cl_items_bc = get_item_sublist();
+    }
+    catch (ex) {
+        window.alert('ex:' + ex.toString());
+    }
+
+    
+    return;
+
+}
+
+
+
+function get_item_sublist(grp) {
+
+    
+
+    if (arguments.length < 1) 
+        grp = null;
+    
+
+    if (hs.isEmpty(grp))
+        grp = es.itm_grp;
+    
+    if (hs.isEmpty(grp))
+        grp = getUrlParameter("itm-grp");
+
+    if (hs.isEmpty(grp))
+        grp = null;
+
+    var typ = es.itm_typ;
+    if (hs.isEmpty(typ))
+        typ = getUrlParameter("itm-typ");
+
+    if (hs.isEmpty(typ))
+        typ = null;
+    
+    var es_items_list = get_item_list();
+
+    if (grp == null && typ == null)
+        return es_items_list;
+    else
+        hs.msg.toast('showing item group: ' + grp + ' type:' + typ);
+
+    var item_sublist = new Array();
+
+    var i, c = 0;
+    for (i = 0; i < es_items_list.length; i++) {
+        var itm_grp = es_items_list[i][6], itm_typ = es_items_list[i][4];
+        if ((grp == null || itm_grp == grp || grp.contains(itm_grp)) && (typ == null || itm_typ == typ || typ.contains(itm_typ)))
+            item_sublist[c++] = es_items_list[i];
+    };
+
+    return item_sublist;
+
+}
+
+
+
+
+/*
+var _items_codelist = null;
+function fill_list_with_items(e) {
+    e = h$(e);
+
+    if (_items_codelist == null)
+        _items_codelist = new CodeList(es_cl_items);
+
+    _items_codelist.fillSelectList(e); //get_sub_control("id", seq));
+
+
+}
+*/
+
+function es_item_list_cfg(eId,eGrpId) {
+
+    var e = h$(eId); 
+    if (!hs.e.exists(e))
+        return;
+
+    build_items_codelist_array();
+
+    e.exList({
+        codelist: es_cl_items,
+        select_only: true,
+       // auto_open_on_focus: true,
+        on_focus: function (e, theExList) {
+            if (!hs.e.isReadonly(e)) {
+                var grp = $("#" + eGrpId).val();
+                if (hs.isEmpty(grp)) {
+                    grp = hs.e.data(e, "def_grp");
+                    if (!hs.isEmpty(grp))
+                        $("#" + eGrpId).val(grp);
+                }
+                
+                theExList.options.codelist = get_item_sublist(grp);
+            }
+        }
+    });
+}
+
+
+
+
+
+function get_item_units_codes() {
+    if (es_item_units == null)
+        es_item_units = hs.cache.getItem("es_item_units");
+
+    return es_item_units;
+}
+
+function fill_item_units_list(seq, item_id) {
+    
+    var item_data = get_item_by_id(item_id);
+    var theList = get_sub_control("un", seq);
+    var cl_item_units = new CodeList(get_item_units_codes());
+    var sel_id = theList.val(); // get selected unit
+
+    
+
+    if (item_data == null)
+        return null;
+
+    if (theList.length == 0)
+        return null;
+
+    if (hs.isEmpty(sel_id)) {
+        if (use_sale_price)
+            sel_id = item_data.def_sale_unit;
+        else
+            sel_id = item_data.def_purch_unit;
+    };
+
+    theList.empty();
+
+    theList.append($('<option />'));
+
+    if (use_sale_price) {
+        if (!hs.isEmpty(item_data.u1_id)) {
+            
+            theList.append($('<option />').val(item_data.u1_id).html(cl_item_units.getTitle(item_data.u1_id)).data("price", item_data.u1_price));
+            
+        };
+
+        if (!hs.isEmpty(item_data.u2_id))
+            theList.append($('<option />').val(item_data.u2_id).html(cl_item_units.getTitle(item_data.u2_id)).data("price", item_data.u2_price));
+
+        if (!hs.isEmpty(item_data.u3_id))
+            theList.append($('<option />').val(item_data.u3_id).html(cl_item_units.getTitle(item_data.u3_id)).data("price", item_data.u3_price));
+    }
+    else {
+        
+
+
+            theList.append($('<option />').val(item_data.u1_id).html(cl_item_units.getTitle(item_data.u1_id)).data("price", item_data.u1_cost));
+
+            if (!hs.isEmpty(item_data.u2_id))
+                theList.append($('<option />').val(item_data.u2_id).html(cl_item_units.getTitle(item_data.u2_id)).data("price", item_data.u2_cost));
+
+            if (!hs.isEmpty(item_data.u3_id))
+                theList.append($('<option />').val(item_data.u3_id).html(cl_item_units.getTitle(item_data.u3_id)).data("price", item_data.u3_cost));
+       
+    };
+
+    theList.val(sel_id); // restore the selected id
+
+    return theList;
+}
+/*
+function ensure_line_visible(e, theExList) {
+    return;
+
+    var seq = hs.safe.parseInt(getLineSeq(e));
+    if (seq <= 3)
+        return;
+    seq = seq - 2;
+    seq = adjustLineSeq(seq.toString());
+
+    hs.msg.toast(seq);
+
+    $(get_sub_control("uc", seq)).parents("tr").first()[0].scrollIntoView(true);
+}
+*/
+
+function on_item_list_open(e, theExList) {
+    
+    if (hs.e.isReadonly(e))
+        return;
+
+    var seq = getLineSeq(e);
+    var grp = line_group(seq);
+
+    if (hs.isEmpty(grp))
+        grp = hs.fm.val("m-grp");
+    
+
+    theExList.options.codelist = get_item_sublist(grp);
+
+    
+}
+
+
+function cfg_keys(line_elm) {
+
+
+    $(line_elm).on("keydown", function (ev) {
+        var e = $(this);
+        var k = ev.which;
+        var can_move = (!e.is("SELECT, .ex-list")) || ev.shiftKey; 
+
+
+        if (k === K.UP && can_move) {
+            hs.absorb(ev);
+            var seq = hs.safe.parseInt(getLineSeq(e));
+            if (seq > 0) {
+                seq--;
+                var id = hs.e.getId(e);
+                id = adjustLineSeq(seq) + id.substr(3);
+                hs.e.focus(id);
+            }
+        };
+
+        if (k === K.DOWN && can_move) {
+            hs.absorb(ev);
+            var seq = hs.safe.parseInt(getLineSeq(e));
+            if (seq < es_doc_line_count) {
+                seq++;
+                var id = hs.e.getId(e);
+                id = adjustLineSeq(seq) + id.substr(3);
+                hs.e.focus(id);
+            }
+        };
+    });
+
+    return line_elm;
+}
+
+function cfg_item_ctrl(eId, isMobile, use_bc, _seq) {
+    var e = $('#' + eId);
+   
+    if (e.length == 0 || e.hasClass("_cfgd")) 
+        return e;
+    
+
+    if (arguments.length < 4)
+        _seq = -1;// no seq
+
+    if (!is_item_grid) { // heavy
+        var LT_FMT = "<a tabindex='-1' class='icon_{1}' href=\"javascript:{3}('{0}')\">{2}</a>";
+        var extra_tools = "";
+
+        extra_tools += LT_FMT.format(eId, "",hs.L("Stock","مخزون الصنف","Stock"), "get_item_qty_list");
+        extra_tools += LT_FMT.format(eId, "", hs.L("Account/Item Trans", "عرض حركة الصنف للحساب","Transaction compte/article"), "show_cov_item_trans");
+        extra_tools += LT_FMT.format(eId, "icon_add", hs.L("Add to purchase list", "إضافة إلى قائمة المشتريات المطلوبة","Ajouter à la liste d'achat"), "add_to_purch_list");
+
+        if (hs.fm.getId() == "es-sale-rent") // get_doc_type() == '206')
+            extra_tools += LT_FMT.format(eId, "", "عرض جدول الحجز", "booking.checkItem");
+
+        if (_seq >= 0 && hs.fm.isEntry())
+            extra_tools += LT_FMT.format(eId, "del", hs.R.delete + " #" + (hs.safe.parseInt(_seq) + 1), "reset_line_item");
+
+        if (hs.fm.getId() != "hc-lab")
+            hs.fm.addFieldTools(eId, "es-item", null, true, extra_tools);
+    };
+
+    e.exList({
+        codelist: es_cl_items_bc,
+        select_only: true,
+        support_bc: use_bc, // true
+        on_item_changed: on_item_list_changed,
+        on_focus: on_item_list_open,
+        scroll_into_view: false,
+        //  multi_select: true,
+        max_list_item_count: 200
+    }).minLen(1).css("min-width", "100px");
+
+
+    if (!use_bc)
+        cfg_keys(e);
+
+
+
+    $(e).addClass("_cfgd")
+        .attr("data-rs-refresh", "yes"); // force data refresh on return select
+
+    return e;
+    
+}
+
+function es_doc_line_config(seq, isMobile, use_bc) {
+
+    var delay_item_cfg = seq > 10  || hs.fm.isView();
+       
+    
+    if (is_item_grid) {
+        $(get_sub_control("uc", seq))
+            .attr("onchange", "on_item_price_changed(this)");
+
+        return;
+    }
+
+    
+    var fldObj = null
+    var item_ctl_id = get_sub_control_id("id", seq);
+
+    if (!delay_item_cfg) {
+        cfg_item_ctrl(item_ctl_id, isMobile, use_bc, seq);
+    }
+    else {
+        $('#' + item_ctl_id).on("mouseover focus", function () {
+            cfg_item_ctrl(item_ctl_id, isMobile, use_bc, seq);
+        })
+    }
+
+
+    hs.list.fill(
+        cfg_keys($(get_sub_control("gr", seq)).css("max-width", "100px").addClass("no-exfind")),
+        "es-itmgr", 1);
+
+
+    // batch no
+    fldObj = $(get_sub_control("bn", seq))
+        .css("max-width", "200px")
+        .attr("autocomplete", "off")
+        .attr("onfocus", "on_item_batch_focus(this)")
+        .attr("onblur", "on_item_batch_blur(this)")
+    ;
+        
+    var batchEnabled = $(fldObj).length > 0;
+    // ---------------
+
+    // unit
+    fldObj = cfg_keys($(get_sub_control("un", seq))
+    // .attr("tabindex", "-1")
+     .attr("onchange", "on_item_unit_changed(this,null)")
+     .addClass("no-exfind")
+     .minLen(1));
+           
+        
+    // note
+   hs.e.setupInputBox(cfg_keys($(get_sub_control("nt", seq))), "")
+    //   .attr("tabindex", "-1")
+    ;
+
+
+    
+
+    // unit price
+    cfg_keys($(get_sub_control("up", seq))
+        .attr("onchange", "on_item_price_changed_manually(this)")
+        .attr("ondblclick", "check_sales_line(this)")
+        .attr("autocomplete", "off")
+        .addClass("flds num")
+        .css("max-width", "150px")
+        .minLen(1));
+    
+    // unit count
+    fldObj = cfg_keys($(get_sub_control("uc", seq))
+        .attr("onchange", "on_item_price_changed(this)")
+        .attr("autocomplete", "off")
+        .addClass("flds num")
+        .css("max-width", "100px").minLen(1));
+
+
+    // test
+    if (hs.fm.isEntry() && es.isStkOption(0x0002)) { // area calc tool    
+        hs.e.inlineTools(fldObj, "<a tabindex='-1' style='margin:0; width: 16px;' class='link_icon_only icon-cal qv' href='javascript:show_area_calc_dlg(\"" + hs.e.getId(fldObj) + "\",\"" + hs.e.getId(get_sub_control("nt", seq)) + "\")'>&nbsp;</a>",-1, true);
+    }
+
+    // end: test
+    
+    if (pd.hasOption(0x2000)) {
+
+        $(fldObj).attr("onblur", "on_item_batch_blur(this)");
+
+        $(fldObj).attr("ondblclick", "get_item_qty_list(this)");
+    };
+
+    // free
+    cfg_keys($(get_sub_control("fu", seq))
+        .attr("autocomplete", "off")
+        .addClass("flds num")
+        .css("max-width", "100px")
+        .attr("ondblclick", "calc_free_cost(this)"));
+        
+    
+
+    // unit discount
+    cfg_keys($(get_sub_control("di", seq))
+        .attr("onchange", "on_item_discount_changed(this)").attr("autocomplete", "off").addClass("flds num").css("max-width", "100px"));
+    
+
+    if (pd.VAT) {
+        cfg_keys($(get_sub_control("tx", seq))
+            .attr("tabindex", "-1")
+            .attr("readonly", "readonly")
+            .attr("autocomplete", "off")
+            .addClass("flds num").css("max-width", "100px"));
+
+        cfg_keys($(get_sub_control("ux", seq))
+            .attr("autocomplete", "off")
+            .addClass("flds num").css("max-width", "100px"))
+            .attr("onchange", "on_upwtax_changed(this)");
+
+
+        cfg_keys($(get_sub_control("rn", seq))
+            .attr("autocomplete", "off")
+            .addClass("flds num").css("max-width", "100px"))
+            //.attr("onchange", "on_withtax_change(this)")
+            ;
+        
+        
+        cfg_keys($(get_sub_control("ld", seq))
+            .attr("autocomplete", "off")
+            .addClass("flds num").css("max-width", "100px")
+            // .attr("onchange", "on_upwtax_changed(this)")
+        )
+
+    }
+
+    //subtotal
+    $(get_sub_control("st", seq))
+        .attr("tabindex", "-1")
+        .attr("readonly", "readonly")
+        .attr("autocomplete", "off")
+        .addClass("flds num").css("max-width", "150px")
+        .dblclick(function () { if (es.chg_price) enter_line_total(this); });
+    ;
+    ;
+
+    cfg_keys($(get_sub_control("ex", seq))
+        .attr("autocomplete", "off")
+        .addClass("flds").css("max-width", "150px")
+        .attr("onchange","on_new_price_changed(this)"))
+        ;
+
+
+    
+    $(get_sub_control("ac", seq)).exList({
+        codelist: fi_cl_sub_accs,
+        select_only: true,
+       // auto_open_on_focus: true,
+        on_item_changed: on_acc_list_changed
+        //,on_focus: on_acc_list_open
+    }); 
+    
+
+    if (isMobile) {
+        $(get_sub_control("id", seq)).css("min-width", "100px");
+        $(get_sub_control("un", seq)).css("min-width", "50px");
+        $(get_sub_control("up", seq)).css("min-width", "70px");
+        $(get_sub_control("st", seq)).css("min-width", "60px");
+        $(get_sub_control("bn", seq)).css("min-width", "60px");
+    };
+};
+
+function enter_line_total(e) {
+    var seq = getLineSeq(e);
+    var uc$ = dl_e("uc",seq);
+
+    if (hs.e.isReadonly(uc$)) // !hs.fm.isEntry() ||
+        return; 
+
+    var qty = line_qty(seq);
+    if (qty <= 0) {
+        hs.msg.required(uc$);
+        return;
+    };
+
+    hs.inputBox.show(!1, '', '', 'الإجمالي', '', null, '', 'قم بإدخال الإجمالي للحصول على سعر الوحدة', function (t) {
+        var st = hs.safe.parseFloat(t);
+        if (st != 0) 
+            hs.msg.updated(line_price$(seq).val(st / qty).trigger('change'));
+
+    //   dl_e("st", seq).val("450000"); // crt mismatch
+
+    });
+}
+
+
+
+function on_new_price_changed(e) {
+    var seq= getLineSeq(e);
+    var new_price = $(e).val();
+
+    if (new_price.contains("%")) {
+        $(e).val(hs.fmtAmount(hs.safe.parseFloat(line_price(seq)) * (hs.safe.parseFloat(new_price)+100) / 100));
+    }
+}
+
+function es_doc_init(lines_count, use_bc, is_doc) {
+    
+    setTimeout( () => _es_doc_init(lines_count, use_bc, is_doc) , 100);
+}
+
+var es_doc_init_done = !1;
+
+function _es_doc_init(lines_count, use_bc, is_doc) {
+       
+
+      if (es_doc_init_done) {
+       // hs.msg.toast("es_doc_init already done")
+      //  return;
+    }
+
+    var isMobile = hs.fm.isMobile, fm_mode = hs.fm.getMode(), i, doc_type = get_doc_type();
+
+    if (!hs.cache.isAvailable())
+        hs.msg.box("Local storage is not available" + K.hr + "التخزين المحلي غير متوفر، لن يعمل النظام بشكل كامل");
+       
+
+    if (arguments.length < 3)
+        is_doc = true;
+
+    
+    if (is_doc && lines_count > 5 && hs.fm.isEntry()) {
+        pd.line_disc = get_sub_control("di", 0).length > 0;
+        hs.page.addTools(es_doc_get_tools());
+    };
+
+
+    act();
+    act("es_doc_init: start");
+       
+    $("#doc_crncy").addClass("ui-hl");
+
+    hs.page.noFooter();
+
+    use_bc = true;
+   
+    
+
+    es_doc_line_count = lines_count;
+
+  
+     is_item_grid = (!hs.isEmpty(fm_mode) && fm_mode.startsWith("pos-hos") && hs.fm.isAdd());
+
+    
+            
+
+        es.chg_price = !hs.e.isReadonly(get_sub_control_id("up", "000"));
+       
+        build_items_codelist_array();
+       
+
+        act("build_items_codelist_array");
+
+
+
+       
+
+    // if (!is_item_grid)
+    {
+            for (i = 0; i < lines_count; i++) {
+                var seq = i.toString();
+                es_doc_line_config(seq, isMobile, use_bc);
+                if (!is_item_grid)
+                    fill_item_units_list(seq, get_item_id(get_sub_control("id", seq)));
+            }
+
+            act("config line items..");
+        }
+
+        
+
+        if (!hs.fm.isView())
+            $('#inv_total').html(hs.fmtAmount(hs.safe.parseFloat($('#price').val())));
+
+        document._on_form_reset = on_es_form_reset;
+
+
+        
+    
+    
+       
+
+    if ((doc_type == "201" || doc_type == "203" || doc_type == "206" || doc_type == "210" || doc_type=="401") && hs.e.exists("amnt-panel")) {
+            hs.fm.onSubmit = showSaveDlg;
+            
+            if (flds_order != null) {
+                flds_order_push('discount');
+                flds_order_push('tax_amount');
+                flds_order_push('doc_charges');
+                flds_order_push('net_amount');
+                flds_order_push('paid');
+                flds_order_push("pnet_amnt");
+                flds_order_push('but_');
+            };
+        }
+    else {
+
+        if (hs.fm.isEntry())
+            hs.fm.onSubmit = showSaveDlg;
+
+            if (flds_order != null)
+                flds_order.push('but_');
+
+        };
+
+
+    
+
+        es_doc_init_done = true;
+
+        config_es_doc_hotkeys();
+
+       
+           
+       
+    if (is_item_grid) {
+       
+
+        if (!hs.fm.isMobile || hs.e.exists("co-pos-items"))
+            pos_show_items();
+
+       
+
+        $("div.doc-inline-item").click(function (e) {
+            if (e.shiftKey) {
+                hs.absorb(e);
+                $(this).toggleClass('no-stock');
+                // l-items-1842-012
+                var item_id = hs.e.getId(this).substr(8, 4);
+                var url = "/app/fms/?fm=es-item&cmd=no-stk-alert&ajax=y&id=" + item_id; 
+
+                do_ajax(url, null, function (result, rc) { if (rc == 0) hs.msg.callout(result, null, 0, null, 300, 0, "co-itm-qty"); else es.noAjax(); }, e);
+
+            }
+            else
+                if ($(this).hasClass('no-stock'))
+                    hs.absorb(e);
+        });
+
+        hs.msg.toast("اضغط بإستمرار على مفتاح shift وقم بتأشير الأصناف المراد تعطيلها");
+    }
+
+
+    
+
+       
+
+   
+    if (hs.fm.isEntry()) {
+        hs.e.inlineTool("net_amount", "js:es_doc_recalc()", "", "icon_refresh");
+
+        hs.e.inlineTool("doc_charges", "js:reset_auto_fract_remove(0)", "", "icon_no");
+        hs.e.inlineTool("discount", "js:reset_auto_fract_remove(1)", "", "icon_no");
+
+        if (pd.VAT != 0)
+            $("#en_sales_tax").on("change", function () { es_doc_recalc() });
+
+
+        $("#pnet_amount").on("dblclick", function () { $("#pnet_amount").val($("#net_amount").val()).trigger("change");  });
+    }
+
+    $("#pnet_amnt, #doc_charges, #tax_amount, #discount").addClass("small");
+
+    $("#pnet_amnt").val($("#pnet_amount").val());
+
+
+    setupAccTools("cash_id");
+    
+
+    
+
+    act("es_doc_init: end");
+
+
+    // --- add initial items 
+
+    if (!is_dirty && getUrlParameter("init-values")=="y") { // not posted back
+        var init_item = getUrlParameter("i-item0");
+        if (!hs.isEmpty(init_item)) 
+            do_select("000_items_id", init_item);
+
+        init_item = getUrlParameter("i-item1");
+        if (!hs.isEmpty(init_item))
+            do_select("001_items_id", init_item);
+
+        init_item = getUrlParameter("i-item2");
+        if (!hs.isEmpty(init_item))
+            do_select("002_items_id", init_item);
+
+
+        var init_batch = getUrlParameter("i-batch0");
+        if (!hs.isEmpty(init_batch))
+            $("#000_items_bn").val(init_batch);
+    }
+     
+
+    if (typeof client !== "undefined")
+        client.es_doc_init();
+
+
+    if (!hs.isEmpty(getUrlParameter("clone")))
+        es_doc_recalc();
+    
+
+
+    hs.fm.onLoad = null; // avoid execute it in resets
+
+}
+
+// ----------------
+
+function reset_auto_fract_remove(chg_disc) {
+    doc_rounding_amount = 0;
+    auto_round_in_discount = auto_round_in_doc_charges = false;
+    
+    if (chg_disc)
+        hs.fm.val("discount", "");
+    else
+        hs.fm.val("doc_charges", "");
+
+    $("#_doc_charges").val("");
+
+    on_discount_changed(chg_disc);
+}
+
+function setupAccTools(eId) {
+    hs.e.setupTools(hs.$(eId), 300, "<a class='icon_view' href='javascript:show_acc_bal(null,\"{0}\")'>عرض الرصيد</a>".f(eId));
+
+  //  h$(eId).on("change", function () { show_acc_bal(null, eId) })
+}
+
+
+function closeSaveDlg() {
+    hs.page.cover(false);
+    HideCover(window);
+    $("#doc-save-tb").remove();
+    $("#amnt-panel").removeClass("center");
+}
+
+function submitSaveDlg() {
+    hs.fm.onSubmit = null;
+    DoSubmit('', '');
+    closeSaveDlg();
+    hs.page.cover();
+    hs.fm.onSubmit = showSaveDlg;
+}
+
+function showSaveDlg() {
+
+    if (hs.e.exists("doc-save-tb")) {
+        on_paid_changed();
+        submitSaveDlg();
+        return;
+    };
+        
+   
+
+    var buts = "<div id='doc-save-tb'><div style='margin:0; margin-top:20px; padding: 10px; border-radius: 8px 8px;' class='ui-tb'><a id='but-save' class='link_icon icon_save' href='javascript:submitSaveDlg()'>" + hs.R.save +"</a><a class='link_icon icon_cancel' href='javascript:closeSaveDlg()'>" + hs.R.cancel +"</a></div></div>";
+
+    if (hs.e.exists("#amnt-panel")) {
+
+       // es_doc_recalc();
+
+        hs.page.cover();
+        var amnt_panel = $("#amnt-panel").addClass("center").append(buts);
+
+        if (hs.e.isFocusable("discount"))
+            $("#discount").attr("title", null).focus();
+        else
+            $("#paid").focus();
+    }
+    else {
+
+        if (!isRent())
+            es_doc_recalc();
+//        hs.msg.box(buts);
+        submitSaveDlg();
+        return;
+    }
+
+    $(amnt_panel).on("keydown", function (e) {
+        if (e.which === 27) {
+            closeSaveDlg();
+            goto_first_vacant_line();
+        };
+
+    });
+   
+
+    return false; // do not submit
+}
+
+function isPOS() {
+    return hsEasyForm.getFormId().startsWith('es-sale-pos');
+}
+
+function is_cash_invoice() {
+
+    var fm_id = hs.fm.getId();
+    var fm_mode = hs.fm.getMode(), doc_subtype = hs.fm.val("doc_subtype");
+    
+
+    if (fm_id == 'es-sale-quot')
+        return true;
+
+    if (fm_id.startsWith('es-sale-pos')) {
+        
+        if (fm_mode == "post-paid" || fm_mode == "pos-hos-waiter")
+            return false;
+
+        if (!hs.isEmpty(hs.fm.val("cov_no")))
+            return false;
+       
+        if (!es.force_paid_entry)
+            return true; 
+    };
+
+    
+
+    if ((fm_id == "es-sale-frd" || fm_id == "hc-svc" || fm_id == "hc-svc-lab") && (doc_subtype == "01" || doc_subtype == "04"))
+        return true;
+
+    return false;
+}
+
+function reset_item_line(seq, item_id, unit_id) {
+
+    try
+    {
+        if (item_id != null)
+            $("#l-items-" + item_id + "-" + unit_id).removeClass("selected has-invalid-value");
+    }
+    catch (ex) {
+       hs.msg.toast('reset line ex: ' + ex.toString());
+    }
+
+    get_sub_control("gr", seq).val('');
+    get_sub_control("id", seq).val('').attr("data-wq", "").attr("data-wp", "");
+    get_sub_control("uc", seq).val('');
+    get_sub_control("fu", seq).val('');
+    get_sub_control("q3", seq).val('');
+    get_sub_control("un", seq).val('');
+    get_sub_control("up", seq).val('');
+    get_sub_control("di", seq).val('');
+    get_sub_control("st", seq).val('');
+
+    get_sub_control("bn", seq).val('');
+    get_sub_control("wh", seq).val('');
+    get_sub_control("ex", seq).val('');
+    get_sub_control("tx", seq).val('');
+    get_sub_control("nt", seq).val('');
+
+    get_sub_control("rt", seq).val('');
+    get_sub_control("rn", seq).val('');
+
+    get_sub_control("br", seq).val('');
+    get_sub_control("ls", seq).val('');
+    get_sub_control("d1", seq).val('');
+    get_sub_control("d2", seq).val('');
+
+    get_sub_control("pj", seq).val('');
+    get_sub_control("ct", seq).val('');
+    get_sub_control("cc", seq).val('');
+
+    get_sub_control("ux", seq).val('');
+    get_sub_control("ld", seq).val('');
+
+  //  hs.msg.toast('reset line: ' + seq);
+
+}
+
+function show_pos_item_desc(seq) {
+    hs.e.showInputBox(get_sub_control("nt", seq), "ملاحظة");
+}
+
+function on_pos_add_items(seq, item_id, unit_id, unit_price, count) {
+
+    
+    /*
+    if (count == 0) {
+        hs.e.showInputBox(get_sub_control("nt", seq), "ملاحظة");
+        return;
+    }
+    */
+
+    var itm = get_item_by_id(item_id);
+
+    if (use_sale_price) { // added 28.7.2022
+        var sales_u_price = get_item_unit_price(itm, unit_id, false);
+        if (sales_u_price != 0)
+            unit_price = sales_u_price;
+    }
+
+    
+
+    
+
+   // alertTone(1);
+
+    var units = parseInt(get_sub_control("uc", seq).val());
+
+    if (isNaN(units) || units < 0)
+        units = 0;
+
+    if (units == 0) {
+        count = hs.safe.parseInt($("#init-pos-qty").val());
+        if (count <= 0) count = 1;
+    };
+    
+    units += count;
+
+   // if (count > 0 && hs.fm.getId() == "hc-svc-lab")
+      //  units = 1; // fixed units
+
+    if (units < 0 || count == 0)
+        units = 0;
+
+    if (pd.max_line_qty != 0 && units > pd.max_line_qty)
+        units = pd.max_line_qty;
+    
+    if (units > 0) {
+
+        unit_price = convert_currency(unit_price, es.SC, get_doc_crncy()); // 20.8.2021
+
+        if (pd.vat_in_price) {
+            get_sub_control("ux", seq).val(unit_price);
+            unit_price = get_item_price_without_tax(itm, unit_price);
+        }
+
+        
+
+        hs.msg.removeAll();
+
+        get_sub_control("id", seq).val(item_id);
+        get_sub_control("uc", seq).val(units);
+
+        get_sub_control("un", seq).val(unit_id);
+        get_sub_control("up", seq).val(unit_price);
+
+        $("#l-items-" + item_id +"-" + unit_id).addClass("selected");
+    }
+    else {
+        reset_item_line(seq, item_id, unit_id);
+    };
+    
+
+     on_item_price_changed(get_sub_control("up", seq));
+
+    hs.fm.dirty(true);
+}
+
+function on_es_form_reset() {
+
+    doc_rounding_amount = 0;
+    auto_round_in_discount = auto_round_in_doc_charges = false;
+
+    h$("doc_charges").val("");
+    h$("_doc_charges").val("");
+
+    act("on_es_form_reset: doc-lines= " + es_doc_line_count);
+
+    hs.cache.removeItem("bskt");
+
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        var item_ctl = get_sub_control("id", seq);
+        var item_id = get_item_id(item_ctl);
+        $(item_ctl).attr("data-sel_id", null).attr("placeholder", null);
+        var unit_id = get_sub_control("un", seq).val();
+        reset_item_line(seq, item_id, unit_id);
+       // on_item_price_changed(get_sub_control("up", seq)); // moved below for one line only 9.4.2019 - performance issue
+    };
+
+    on_item_price_changed(get_sub_control("up", 0));
+    
+
+    GetElm("page").scrollTop = 0;
+
+    act("on_es_form_reset: end");
+}
+
+// var use_item_discount_in_doc_discount = false;
+// var use_item_discount_std_pct = true;
+
+function get_amount_discount(amount, pct, is_net_amount, use_std_pct) {
+    if (is_net_amount && !use_std_pct) {
+        use_std_pct = true;
+        hs.msg.toast("Force using standard percentage calculation");
+    };
+
+    if (use_std_pct)
+    {
+        if (is_net_amount)
+            return pct * (amount / (100.0 - pct));
+        else
+            return amount * pct / 100;
+    }
+    else
+    {
+        pct = pct / 100;
+        return amount - (amount / (1.0 + pct));
+    };
+
+
+
+}
+
+
+
+function get_item_discount(seq, price, is_net_amount) {
+    var item_discount_str = get_sub_control("di", seq).val();
+
+    if (hs.isEmpty(item_discount_str))
+        return 0;
+        
+    var item_discount = hs.safe.parseFloat(item_discount_str);
+    if (item_discount > 0) {
+        if (item_discount_str.contains("%")) {
+            var is_std_pct = !(item_discount_str.contains("%%"));
+            item_discount = get_amount_discount(price, item_discount, is_net_amount, is_std_pct);
+        };
+    };
+
+    item_discount = hs.safe.round(item_discount, 2);
+
+    get_sub_control("di", seq).val(item_discount.toString());
+
+    return item_discount;
+
+};
+
+
+
+function on_item_discount_changed(obj) {
+
+    var seq = getLineSeq(obj);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    if (isPurchInv()) {
+        // return;
+
+        var price = line_price(seq);// hs.safe.parseFloat(get_sub_control("up", seq).val());
+        get_item_discount(seq, price, true);
+        return;
+    };
+       
+
+    on_item_unit_changed(get_sub_control("un", seq.toString()), seq);
+}
+
+
+
+function check_item_price(seq) {
+    if (use_sale_price && !is_item_grid) {
+        var obj = get_sub_control("up", seq);
+        var price = hs.safe.parseFloat($(obj).val());
+        if (price == 0)
+            return;
+        var item = line_item(seq);
+        var unit = get_sub_control("un", seq).val();
+        var unit_cost_dc = convert_currency(get_item_unit_cost(item, unit), es.SC, get_doc_crncy());
+        
+        if (price < unit_cost_dc) {
+            var m = 'سعر البيع {0} أقل من سعر التكلفة'.f(price, unit_cost_dc);
+            hs.msg.tip($(obj), m, 9, 200);
+        };
+    };
+}
+
+function es_doc_recalc() {
+
+   // hs.msg.toast("recalc doc..", 3,!0);
+
+    
+    
+    var pricing_policy = $("#pricing").val() || "";
+    var apply_sales_promo = use_sale_price && pd.line_disc && !hs.isEmpty(pricing_policy) && pricing_policy != "P0" && pricing_policy != "P1" && !pricing_policy.startsWith("S");
+
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+
+        if (apply_sales_promo)
+            on_item_unit_changed(get_sub_control("un", seq), seq);
+        else
+            if (isRent())
+                on_item_list_changed(get_sub_control("id", seq), false)
+            else
+                on_item_price_changed(line_price$(seq));
+    };
+
+
+
+}
+
+
+
+
+function on_item_price_changed_manually(el) {
+
+    var seq = getLineSeq(el);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var is_tax_enabled = pd.VAT != 0 && h$("en_sales_tax").val() == "Y";
+
+    var is_vat_in_sales_price = is_tax_enabled && pd.vat_in_price && use_sale_price;
+
+    var item = line_item(seq);
+    var price = line_price(seq);
+
+    if (is_vat_in_sales_price && item != null && price != 0) {
+
+        var upwtax = price + calc_tax(price, item.item_tax_pct, false);
+
+        line_upwtax(seq, upwtax);
+    };
+
+    on_item_price_changed(el);
+};
+
+
+var doc_rounding_amount = 0;
+var auto_round_in_discount = false, auto_round_in_doc_charges = false;
+
+function autoFractDiscount() {
+    return pd.hasOption(0x0010);
+}
+
+function on_item_price_changed(el) {
+
+    var seq = getLineSeq(el);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var is_tax_enabled = pd.VAT != 0 && h$("en_sales_tax").val() == "Y"
+
+    var is_vat_in_sales_price = is_tax_enabled && pd.vat_in_price && use_sale_price;
+    var is_simplified =  hs.fm.val("doc_group") == "02"; // review_me - support another checks
+    
+
+    var item = line_item(seq);
+    var unit_price = line_price(seq);
+    var units = line_qty(seq); 
+
+    check_item_price(seq);
+    
+    var sub_total, seq;
+   
+
+
+    if (isNaN(unit_price) || unit_price < 0)
+        unit_price = 0;
+
+    if (isNaN(units) || units < 0)
+        units = 0;
+
+    if (use_hp_in_tax)
+        sub_total = hs.safe.roundHP(unit_price * units);
+    else
+        sub_total = hs.safe.round(unit_price * units);
+    
+
+    get_sub_control("up", seq).val(hs.fmtAmountHP(unit_price,!0)); // item price
+    get_sub_control("uc", seq).val(units != 0 ? units : ''); // item count
+    line_subtotal(seq, sub_total);
+
+    var itm_tax_pct = 0, upwtax = line_upwtax(seq);
+
+    if (pd.VAT != 0) {
+        var ltax = 0, ltaxable = 0, sbwt = sub_total;
+
+        if (is_tax_enabled && item != null) {
+
+            ltaxable = sub_total;
+            
+            if (pd.VAT == 2) {
+                ltaxable += line_unit_discount(seq) * units;
+            };
+
+            itm_tax_pct = item.item_tax_pct;
+            
+            
+
+            ltax = calc_tax(ltaxable, itm_tax_pct, false);
+
+            ltax =  hs.safe.roundHP(ltax);
+
+
+            sbwt = hs.safe.round(sub_total + ltax);
+
+            
+            if (upwtax != 0 && is_vat_in_sales_price && improve_tax_ui) {
+                    sbwt = upwtax * units;
+                    ltax = sbwt - sub_total;
+            };
+            
+            
+            
+        }
+       
+        get_sub_control("rn", seq).val(hs.fmtAmount(sbwt, !0)); // total with tax
+        
+       
+
+        line_tax(seq, ltax);
+        line_subtotal(seq, sub_total);
+
+    };
+
+
+    var taxable_cats = new Map();
+    var total_price = 0, doc_total_taxable = 0, total_tax = 0, total_with_tax = 0, ltax_total = 0;
+    
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+
+        var lSubTotal = line_subtotal(seq);
+        total_price += lSubTotal;
+
+        total_with_tax += line_subtotal_withtax(seq);
+
+
+        if (is_tax_enabled) {
+            var itm = line_item(seq);
+            if (itm != null && itm.item_tax_pct > 0) {
+
+                var lTaxable = line_taxable(seq, itm);
+                total_tax += calc_tax(lTaxable, itm.item_tax_pct, false);
+                doc_total_taxable += lTaxable;
+
+                // beta
+                taxable_cats.set(itm.item_tax_pct, lTaxable + (taxable_cats.get(itm.item_tax_pct) || 0));
+
+            }
+            else
+                doc_total_taxable += lSubTotal;
+
+            ltax_total += line_tax(seq);
+        }
+
+    } // for
+
+
+    /*
+
+    if (pd.VAT != 0) {
+        doc_total_taxable = 0;
+
+      
+        taxable_cats.forEach((cat_tabxable, cat_pct) => {
+            doc_total_taxable += cat_tabxable;
+        });
+    }
+    */
+
+
+    if (pd.VAT != 0 && use_tax_cats) {
+
+        doc_total_taxable = 0;
+
+        var cats_total_tax = 0, m = "";
+        taxable_cats.forEach((cat_tabxable, cat_pct) => {
+            doc_total_taxable += cat_tabxable;
+
+            var cat_tax = calc_tax(cat_tabxable, cat_pct, false);
+            cat_tax = hs.safe.round(cat_tax);
+            cats_total_tax += cat_tax;
+
+            m += "{0} Tax({1}) %{2}<br/>".f(hs.fmtAmount(cat_tabxable), cat_tax, cat_pct);
+
+        });
+
+        cats_total_tax = hs.safe.round(cats_total_tax);
+
+        m += "Total Tax(cats)=" + cats_total_tax;
+
+
+        total_tax = hs.safe.round(total_tax)
+
+
+        var diff_tax = hs.safe.roundHP(total_tax - cats_total_tax);
+
+        if (diff_tax != 0)
+            m += "<hr/>Diff Tax: " + diff_tax + " Cats=" + taxable_cats.size + " Lines Tax=" + total_tax;
+
+
+        total_tax = cats_total_tax;// + doc_rounding_amount;
+
+        m += "<br/>Doc Rounding: " + doc_rounding_amount;
+        m += "<hr/>Subtotal without Tax:" + total_price;
+        m += "<br/>Tax: " + total_tax;
+        m += "<br/>Total With Tax: " + total_with_tax;
+
+
+        // doc_rounding_amount = hs.safe.round(total_with_tax - (total_price + total_tax));
+
+        // m += "<br/>Doc Rounding: " + doc_rounding_amount;
+
+        m += "<br/>ltax_total=" + ltax_total;
+
+        // hs.msg.callout("<div class='lft'>" + m + "</div>");
+
+
+
+        $("#tax_amount").val(hs.fmtAmount(total_tax, !0));
+
+
+    }
+
+
+
+    
+    
+
+    total_price = hs.safe.round(total_price);
+    doc_total_taxable = hs.safe.round(doc_total_taxable);
+
+
+    
+
+    // auto fract removal
+    if (is_vat_in_sales_price && doc_total_taxable > 0 && autoFractDiscount()) { 
+
+        if (auto_round_in_discount)
+            $("#discount").val('');
+
+        if (auto_round_in_doc_charges)
+            $("#doc_charges").val('');
+
+       // auto_round_in_discount = auto_round_in_doc_charges = false;
+
+
+       // doc_rounding_amount = hs.safe.round(doc_total_taxable - total_price);
+
+        doc_rounding_amount = hs.safe.round( total_with_tax - (total_price + total_tax));
+
+      
+
+        if (doc_rounding_amount != 0) {
+     
+           
+                if (doc_rounding_amount < 0) {
+                    $("#discount").val(hs.fmtAmount(-doc_rounding_amount));
+                    auto_round_in_discount = true;
+                    hs.msg.tip("discount", "Rounding: " + doc_rounding_amount, 3, 100);
+                }
+                else {
+                    $("#doc_charges").val(hs.fmtAmount(doc_rounding_amount));
+                    auto_round_in_doc_charges = true;
+                    hs.msg.tip("doc_charges", "Rounding: " + doc_rounding_amount, 3, 100);
+                }
+            
+        }
+            
+    } // auto fract remove
+
+
+
+
+    $("#price").val(hs.fmtAmount(total_price)); 
+    $('#inv_total').html(hs.fmtAmount(total_price));
+
+    $("#tax_amount").val(hs.fmtAmount(total_tax, !0));
+
+    
+
+    
+
+    
+    
+
+    // apply doc level promo disc (if not pd.line_disc
+    
+    if (!pd.line_disc) {
+        var pricing_policy = $("#pricing").val() || "";
+        var apply_sales_promo = use_sale_price && !hs.isEmpty(pricing_policy) && pricing_policy != "P0" && pricing_policy != "P1" && !pricing_policy.startsWith("S");
+
+        if (apply_sales_promo) { // apply cust/promo discount
+            var cov_no = $("#cov_no").val();
+            var cust_disc_pct = (pricing_policy == "P3" || pricing_policy == "P4") ? get_cust_discount_pct(cov_no) : hs.safe.parseFloat(hs.list.exValue("pricing"));
+           
+            if (pricing_policy == "P4") { // apply health care 
+                hs.fm.val("pnet_id", cust_disc_pct > 0 ? hc_get_cust_company(cov_no) : "");
+                h$("pnet_amount").val(cust_disc_pct > 0 ? (cust_disc_pct).toString() + "%" : "0");
+            } else
+                if (pricing_policy == "P2") { // disable health care
+                    hs.fm.val("pnet_id", "");
+                    h$("pnet_amount").val("0");
+                }
+                else // sales-promo
+                    h$("discount").val(cust_disc_pct > 0 ? cust_disc_pct.toString() + "%" : "0");
+        }
+    }
+
+
+    
+        on_discount_changed(0);
+  
+}
+
+function on_sales_return_doc_changed() {
+    var ref_doc_no = $("#ref_doc_no").val();
+   // hs.msg.toast("sales ret changed:" + ref_doc_no);
+
+    hs.fm.getData("es-sale-return", "", ref_doc_no, function (data) {
+        if (data != null) {
+            $("#num02").val(data.rem_amount.toString());
+           
+            on_discount_changed(0);
+
+            hs.msg.updated("num02");
+        };
+    });
+}
+
+function parseFloatOrPctOf(e, eTot) {
+    e = h$(e);
+    var v = e.val() || '';
+        
+    var tot_amnt = hs.safe.parseFloat(h$(eTot).val()); // total price
+    var e_amnt = hs.safe.parseFloat(v);
+    
+    if (e_amnt != 0 && v.contains("%")) {
+        e_amnt = hs.safe.round(get_amount_discount(tot_amnt, e_amnt, false, !v.contains("%%")));
+        $(e).val(hs.fmtAmount(e_amnt));
+    };
+
+    return e_amnt;
+}
+
+var max_frac_to_auto_discount = 0.03;
+
+function fraction_discount(is_auto) {
+    var total_price = hs.safe.parseFloat($("#price").val()); // total price
+    var discount = hs.safe.parseFloat($("#discount").val());
+
+    if (total_price > 1 && discount == 0) { // auto fraction removal
+        var fr = hs.safe.fract(total_price);
+        if (fr != 0 && (!is_auto || fr <= max_frac_to_auto_discount)) {
+            hs.msg.toast("Auto fraction Discount: " + fr, 5);
+            $("#discount").val(hs.fmtAmount(fr));
+        }
+    }
+}
+
+function adjustRound(amount) {
+    var fr = hs.safe.fract(amount);
+    if (fr == 0.01) {
+        amount -= 0.01;
+    }
+    else
+        if (fr == 0.99) {
+            amount += 0.01;
+        }
+
+    return amount;
+
+}
+
+function on_discount_changed(is_actual_change) {
+
+  
+
+    if (is_actual_change) {
+        if (auto_round_in_doc_charges)
+            $("#doc_charges").val("");
+        doc_rounding_amount = 0;
+        auto_round_in_doc_charges = auto_round_in_discount = false;
+    }
+
+   
+
+    var $discount = $("#discount"),
+    is_pct = $discount.val().contains("%"),
+    is_std_pct = !($discount.val().contains("%%")),
+    total_price = hs.safe.parseFloat($("#price").val()),
+    discount = hs.safe.parseFloat($discount.val()),
+    is_after_tax = discount > 0 && !is_pct && $discount.val().contains("*");
+
+    // test ksa
+    if (is_after_tax) {
+
+        var taxable_cats = getDocTaxableCats(), doc_tot_with_tax = 0, tot_cats_discount = 0;
+
+        taxable_cats.forEach((cat_tabxable, cat_pct) => {
+            doc_tot_with_tax += cat_tabxable + calc_tax(cat_tabxable, cat_pct);
+        });
+
+
+
+        taxable_cats.forEach((cat_tabxable, cat_pct) => {
+
+            var lpct = (cat_tabxable + calc_tax(cat_tabxable, cat_pct)) / doc_tot_with_tax,
+                inv_pct = hs.safe.roundHP(100 / (100 + cat_pct));
+
+
+            tot_cats_discount += discount * lpct * inv_pct;
+
+        });
+
+        discount = tot_cats_discount;
+
+
+        //      discount = hs.safe.round(discount * 0.8695652); // 0.869565217391304; //
+
+
+        $("#discount").val(hs.fmtAmount(discount));
+        hs.msg.toast("تخفيض من اجمالي الفاتورة سيتم اعادة احتساب مبلغ التخفيض", 5);
+    }
+      // end test ksa
+
+    
+
+    
+   
+    var discount_base = total_price;
+       
+
+    discount_base = calc_items_total_discount_base_dc();
+    
+
+    if (is_pct) {
+        discount = hs.safe.round(get_amount_discount(discount_base, discount, false, is_std_pct));
+        $("#discount").val(hs.fmtAmount(discount));
+    }
+
+    var doc_charges = parseFloatOrPctOf("doc_charges", "price");
+     
+         
+
+    if (pd.VAT==0 && !is_actual_change && pd.hasOption(0x0010) && total_price > 1 && get_doc_crncy() == es.CC)  // auto fraction removal
+        fraction_discount(1);
+    
+    
+
+    if (pd.VAT == 1)
+        calc_vat_after_discount(is_actual_change);
+
+
+    
+
+    var tax_amount = hs.safe.parseFloat($("#tax_amount").val());
+
+
+    var net_amount = hs.safe.round(total_price + doc_charges - discount + tax_amount);
+
+   
+    // beta - check_me
+    
+    if (is_after_tax && pd.VAT == 1) {
+        var fr = hs.safe.fract(net_amount);
+        if (fr == 0.01) {
+            net_amount -= 0.01;
+            discount += 0.01;
+            $("#discount").val(hs.fmtAmount(discount));
+            hs.msg.toast("Discount +0.01", 5);
+        }
+        else
+            if (fr == 0.99) {
+                net_amount += 0.01;
+                discount -= 0.01;
+                $("#discount").val(hs.fmtAmount(discount));
+                hs.msg.toast("Discount -0.01", 5);
+            }
+    };
+    // end beta
+
+    
+
+
+    $("#net_amount").val(hs.fmtAmount(net_amount));
+    
+    var pnet_amnt = parseFloatOrPctOf("pnet_amount", "net_amount");
+
+    if (net_amount != 0 &&  pnet_amnt == net_amount ) {
+        $("#doc_subtype").val("04");
+      //  $("#cash_id").val('');
+    };
+
+    if (is_cash_invoice()) {
+
+        pnet_amnt += hs.safe.parseFloat($("#num02").val());
+
+        if (net_amount - pnet_amnt > 0)
+            $("#paid").val(hs.fmtAmount((net_amount - pnet_amnt)));
+        else
+            $("#paid").val("0");
+
+        $("#rem_amount").val("0");
+    };
+   
+
+    on_paid_changed();
+}
+
+// -----------------------
+
+function calc_items_total_cost_dc() {
+
+    
+
+    var tot_cost = 0;
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        var item = line_item(seq), unit = line_unit(seq);
+        var tot_qty = line_qty(seq) + line_free(seq);
+
+       
+        tot_cost += (get_item_unit_cost(item, unit) * tot_qty);
+       
+
+    };
+
+    return convert_currency(tot_cost, es.SC, get_doc_crncy());
+
+    
+}
+
+function calc_items_total_discount_base_dc() {
+    var tot_cost = 0;
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        var item = line_item(seq), unit = line_unit(seq);
+        var tot_qty = line_qty(seq) + line_free(seq);
+
+        if (item == null || hs.isFlagEnabled(item.item_flags, 0x0800))
+            continue; // no discount allowed
+
+        if (pd.hasOption(0x0020))  // use cost instead of price
+            tot_cost += (get_item_unit_cost(item, unit) * tot_qty);
+        else
+            tot_cost += line_subtotal(seq);
+    };
+
+    return convert_currency(tot_cost, es.SC, get_doc_crncy());
+
+
+}
+
+
+
+function calc_tax(price, tax_pct, _tax_in_price) {
+
+    if (arguments.length < 3)
+        _tax_in_price = false;
+
+    if (_tax_in_price)
+        return price - (price / ((100 + tax_pct) / 100));
+    else
+        return price * tax_pct / 100;
+}
+
+function getDocTaxableCats() {
+
+    var taxable_cats = new Map();
+
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        var item = line_item(seq);
+        if (item != null) {
+            var lTaxable = line_taxable(seq, null);
+
+            taxable_cats.set(item.item_tax_pct, lTaxable + (taxable_cats.get(item.item_tax_pct) || 0));
+        };
+
+    } // for
+
+    return taxable_cats;
+}
+
+
+function calc_vat_after_discount(is_actual_change) {
+
+    if (auto_round_in_discount)
+        return; 
+
+    if (pd.VAT != 1)
+        return;
+
+    var is_simplified = true;// hs.fm.val("doc_group") == "02"; // review_me - support another checks
+
+    if (!use_sale_price)
+        is_simplified = true;
+
+    if (!is_simplified)
+        return; //  due KSA - to be checked for others // line_unit_discount field should be added
+
+    
+    var is_tax_enabled =  h$("en_sales_tax").val() == "Y"
+
+    var doc_discount = hs.safe.parseFloat($("#discount").val());
+    var doc_price = hs.safe.parseFloat($("#price").val());
+
+    if (doc_price <= 0)
+        return;
+
+    
+
+   
+
+    if (doc_discount > 0 && doc_discount < 0.05)
+        return;
+
+
+    var taxable_cats = new Map();
+
+    var total_tax = 0;
+
+    if (is_tax_enabled) {
+        for (var seq = 0; seq < es_doc_line_count; seq++) {
+            var ltax = 0;
+            var item = line_item(seq);
+            if (item != null && item.item_tax_pct != 0) {
+                var tax_off = 0, lTaxable = line_taxable(seq, item);
+                var lpct = lTaxable / doc_price;
+
+                ltax = calc_tax(lTaxable, item.item_tax_pct);
+
+                taxable_cats.set(item.item_tax_pct, lTaxable + (taxable_cats.get(item.item_tax_pct) || 0));
+
+
+                if (doc_discount != 0)
+                    tax_off = calc_tax(doc_discount * lpct, item.item_tax_pct);
+
+                //get_sub_control("nt", seq).attr("placeholder", "tax off:" + hs.fmtAmount(tax_off, !0));
+
+                ltax -= tax_off;
+
+             //   ltax=hs.safe.round(ltax);
+
+                
+            };
+
+          
+            total_tax += ltax;
+        } // for
+    } // if
+
+
+    var cats_total_tax = 0;
+    taxable_cats.forEach((cat_tabxable, cat_pct) => {
+
+        var lpct = cat_tabxable / doc_price, cat_taxable_off = 0;
+
+        if (doc_discount != 0) {
+            cat_taxable_off = doc_discount * lpct;
+            cat_tabxable -= cat_taxable_off;
+        }
+
+        cats_total_tax += hs.safe.round(calc_tax(cat_tabxable, cat_pct, false));
+    });
+
+    cats_total_tax = hs.safe.round(cats_total_tax);
+
+//    var diff_tax = total_tax - cats_total_tax;
+  //  hs.msg.toast("Diff Tax after Discount: " + hs.safe.roundHP(diff_tax) + " Cats=" + taxable_cats.size, 5, true);
+
+
+    total_tax = cats_total_tax; // + doc_rounding_amount;
+
+
+
+    $("#tax_amount").val(hs.fmtAmount(total_tax, !1));
+
+   
+
+
+}
+
+
+
+
+
+function on_paid_changed() {
+
+    var rem_amount;
+    // var paid = hs.safe.parseFloat($("#paid").val());
+    var paid = parseFloatOrPctOf("paid", "net_amount");
+    var total_price = hs.safe.parseFloat($("#price").val()); // total price
+    var discount = hs.safe.parseFloat($("#discount").val());
+    var pnet_amnt = hs.safe.parseFloat($("#pnet_amount").val());
+    var num02 = hs.safe.parseFloat($("#num02").val());
+    var doc_charges = hs.safe.parseFloat($("#doc_charges").val());
+    var tax_amount = hs.safe.parseFloat($("#tax_amount").val());
+
+
+    $("#pnet_amnt").val($("#pnet_amount").val())
+
+   // if (isPurchInv()) tax_amount = 0;
+
+    if (isNaN(total_price))
+        total_price = 0;
+
+    if (isNaN(discount)) {
+        discount = 0;
+        $("#discount").val(discount);
+    };
+
+    if (isNaN(paid))
+        paid = 0;
+
+    
+
+    rem_amount = total_price + tax_amount + doc_charges - (discount + paid + pnet_amnt + num02);
+    $("#rem_amount").val(hs.fmtAmount(hs.safe.round(rem_amount)));
+
+
+    on_doc_crncy_changed('price', 'doc_crncy', 'doc_crncy_exrate');
+
+    var info_msg = "";
+    var crncy_title = get_currency_title(hs.fm.val('doc_crncy'));
+    
+
+    info_msg += hs.link("الإجمالي: " + $('#price').val() + " " + crncy_title, "js:pos_show_items()","link_icon qv icon_qv");
+ 
+    
+
+    if (is_item_grid) {
+        info_msg += "<a class='mir-flt link_icon qv icon_qv' href='javascript:pos_show_items()'>عرض&nbsp;الفاتورة</a>";
+
+        if (!hs.fm.isMobile || hs.e.exists("co-pos-items"))
+            pos_show_items();
+    }
+ 
+    
+
+
+    $("#fm_state").html(info_msg).css("font-size", "11pt").css("color", "#008").css("padding", "10px");
+
+    $("#amnt-crncy").text(crncy_title);
+}
+
+// -------------------------------------
+
+
+
+function on_item_unit_changed(unitsList, seq) {
+
+    var is_actual_unit_change = false;
+
+    if (hs.isEmpty(seq)) {
+        seq = getLineSeq(unitsList); 
+        is_actual_unit_change = true;
+    };
+
+    log("on_item_unit_changed: " + seq);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    if (is_actual_unit_change)
+        get_sub_control("di", seq).val("");
+
+    var price_obj = line_price$(seq);// get_sub_control("up", seq);
+
+   
+    var item_data = line_item(seq); 
+    if (item_data == null)
+        return;
+
+   
+    
+    var unit = $(unitsList).val();
+    var sel_unit_price_val = 0;
+    var item_crncy = use_sale_price ? item_data.item_crncy : es.SC; 
+    
+    
+    if (unitsList.length > 0 && !hs.isEmpty(unit)) // 9.12.2018
+        sel_unit_price_val = use_sale_price ? get_item_unit_price(item_data, unit, true) : get_item_unit_cost(item_data, unit);
+    else
+        sel_unit_price_val = use_sale_price ? item_data.u1_price : item_data.u1_cost;
+
+
+    if (use_sale_price) {
+        var wp = dl_e("id", seq).attr("data-wp");
+
+      
+
+        if (wp) {
+            if (pd.vat_in_price) {
+                line_upwtax(seq, hs.safe.parseFloat(wp));
+                on_upwtax_changed(dl_e("ux", seq))
+                log("WP =" + wp);
+                return;
+            }
+            else
+                sel_unit_price_val = wp;
+
+        }
+        
+    }
+   
+    
+    sel_unit_price_val = hs.safe.parseFloat(sel_unit_price_val);
+
+    var unit_price_dc = 0; 
+
+    var doc_crncy = get_doc_crncy();//
+
+    if (hs.isEmpty(doc_crncy))
+        doc_crncy = es.CC; // 
+    
+
+    unit_price_dc = convert_currency(sel_unit_price_val, item_crncy, doc_crncy); // in doc crncy not cc
+
+    if (!isNaN(sel_unit_price_val) && (sel_unit_price_val != unit_price_dc))
+        hs.msg.toast(sel_unit_price_val + " " + get_currency_title(item_crncy));
+    
+    unit_price_dc = (!use_sale_price && es.isStkOption(0x04) && pd.SI != -1) ? hs.safe.round(unit_price_dc) : hs.safe.roundHP(unit_price_dc); // 0x04=round unit cost
+        
+
+    if (isPurchInv())
+        price_obj.val("").attr("placeholder", unit_price_dc);
+    else {
+
+       
+        var unit_discount_base_amnt_dc = unit_price_dc;
+        if (pd.hasOption(0x0020)) { // use cost instead of price
+            unit_discount_base_amnt_dc = convert_currency(get_item_unit_cost(item_data, unit), es.SC, doc_crncy);
+            if (unit_discount_base_amnt_dc == 0)
+                unit_discount_base_amnt_dc = unit_price_dc;
+        };
+
+
+        // -- begin: line level promo : 3.10.2020
+        var pricing_policy = $("#pricing").val() || "";
+
+        if (!hs.isEmpty(pricing_policy) && pd.line_disc) {
+            var promo_disc_pct = 0;
+
+            var apply_sales_promo = use_sale_price && !hs.isEmpty(pricing_policy) && pricing_policy != "P0" && pricing_policy != "P1" && !pricing_policy.startsWith("S");;
+
+            if (apply_sales_promo && item_data != null && !hs.isFlagEnabled(item_data.item_flags, 0x0800))
+                promo_disc_pct = pricing_policy == "P3" ? get_cust_discount_pct($("#cov_no").val()) : hs.safe.parseFloat(hs.list.exValue("pricing"));
+            
+            if (promo_disc_pct > 0)
+                promo_disc_pct += "%";
+            else
+                promo_disc_pct = "0";
+
+            get_sub_control("di", seq).val(promo_disc_pct);
+
+        };
+        // -- end: line level promo
+      
+
+        if (pd.vat_in_price)
+            line_upwtax(seq, get_item_unit_price(item_data, unit, false));
+
+
+        unit_price_dc = unit_price_dc - get_item_discount(seq, unit_discount_base_amnt_dc, false);
+        price_obj.val(unit_price_dc);
+    };
+
+    on_item_price_changed(price_obj);
+
+   
+    
+}
+
+
+
+function on_item_list_changed(theList, move_to_next_item) {
+
+    if (!hs.isEmpty(h$(theList).val()))
+        hs.msg.removeAll(); // for POS and offline mode
+
+    if (!hs.fm.isEntry())
+        return;
+
+    var item_id = get_item_id($(theList));
+    var seq = getLineSeq(theList);
+
+    if (hs.isEmpty(seq))
+        return;
+
+
+  
+
+    var e_up = get_sub_control("up", seq),
+        e_upwtx = get_sub_control("ux", seq);
+
+
+
+    var objBatch = get_sub_control("bn", seq);
+
+    if (hs.isEmpty(item_id)) {
+
+        reset_item_line(seq, null, null);
+
+        e_up.val('');
+        
+        $(theList).attr("data-wq", "").attr("data-wp", "")
+
+        
+        
+        on_item_price_changed(e_up);
+        return;
+    };
+
+
+
+    hs.trace("on_item_list_changed: " + item_id);
+    
+    fill_item_units_list(seq, item_id);
+
+
+  
+   
+    var qty = $(theList).attr("data-wq"); // wiegthed items
+
+    if (isRent() && is_uni_book)
+        qty = booking.getDays().toString();
+    else
+        if (hs.isEmpty(qty)) 
+            qty = "1";
+
+    
+  
+
+    $(get_sub_control("uc", seq)).val(qty);
+    
+     on_item_unit_changed(get_sub_control("un", seq), seq);
+
+
+
+
+
+
+     
+    
+    if (hs.safe.parseFloat(e_up.val()) <= 0) {
+        hs.e.enable(e_up);
+        hs.e.enable(e_upwtx);
+    }
+    else
+        if (!es.chg_price && !hs.e.isReadonly(e_up)) {
+            hs.e.disable(e_up);
+            hs.e.disable(e_upwtx);
+        }
+                     
+  
+        if (move_to_next_item) {
+            focus_next(theList);
+        };
+
+      
+        if (es.ajax_calls && pd.hasOption(0x2000) && objBatch.length == 0 && !isPOS()) { // auto-show item qty list
+            var obj = $(get_sub_control("uc", seq));
+ 
+            get_item_qty_list(obj);
+        };
+        
+       
+        if (pd.hasOption(0x0100)) { // show spec in note
+            var item = line_item(seq);
+            var item_spec = item.item_spec;
+            
+            if (!hs.isEmpty(item_spec)) {
+                
+                //   $(get_sub_control("nt", seq)).val(item.item_spec.replace('.*.', '\n').replace('.*.', '\n').replace('.*.', '\n').replace('.*.', '\n')); // chg it to regEx
+                // $(get_sub_control("nt", seq)).val(JSON.parse('"' + item.item_spec + '"'));
+
+                $(get_sub_control("nt", seq)).val(item_spec);
+            }
+            
+            
+        }
+
+};
+
+// -------------------------
+
+
+
+function nextBatchListItem(next,e) { // e=input elm
+    var _a;
+
+    if (next == 1)
+        _a = $("table.item-batch-menu tbody tr.hs-selected").next();
+    else
+        if (next == -1)
+            _a = $("table.item-batch-menu tbody tr.hs-selected").prev();
+        
+
+    if (_a.length == 0)
+        _a = $("table.item-batch-menu tbody tr:first");
+
+    if (_a.length != 0) {
+        $("table.item-batch-menu tbody tr.hs-selected").removeClass("hs-selected");
+        $(_a).addClass("hs-selected");
+
+        
+         $(e).val($(_a).attr("data-val"));
+
+        _a[0].scrollIntoView(false);
+    };
+}
+
+function on_item_batch_menu_setup(e) { // e=batch
+    
+    var is_setup = $(e).attr("data-setup");
+    
+    if (hs.isEmpty(is_setup))
+        $(e).attr("data-setup", "1");
+    else
+        return; // 
+
+
+    $(e).on("keydown", function (ev) {
+        var kc = ev.which;//(ev.keyCode ? ev.keyCode : ev.which);
+
+        if (kc === K.UP && !ev.shiftKey) {
+            hs.absorb(ev);
+            nextBatchListItem(-1, this);
+            return;
+        }
+
+        if (kc === K.DOWN && !ev.shiftKey) {
+            hs.absorb(ev);
+            nextBatchListItem(1, this);
+            return;
+        }
+
+        if (kc === 13) {
+
+            hs.absorb(ev);
+            
+            var _a = $("table.item-batch-menu tbody tr.hs-selected");
+            var bat_val = $(_a).attr("data-val");
+            if (!hs.isEmpty(bat_val))
+                $(this).val();
+
+            line_item_focus_next(this);
+        }
+    });
+}
+
+
+// dl = doc line
+function dl_e(fld, seq) {
+    return $(get_sub_control(fld, seq));
+}
+
+function line_seq(e) {
+    return getLineSeq(e);
+}
+
+function line_unit(seq){
+   return get_sub_control("un", seq).val();
+}
+
+function line_free(seq) {
+    return hs.safe.parseFloat(get_sub_control("fu", seq).val());
+}
+
+function line_qty(seq) {
+    return hs.safe.parseFloat(get_sub_control("uc", seq).val());
+}
+
+function line_total_qty(seq) {
+    return hs.safe.parseFloat(get_sub_control("uc", seq).val()) + hs.safe.parseFloat(get_sub_control("fu", seq).val());;
+}
+
+function line_price$(seq) {
+    return get_sub_control("up", seq);
+}
+
+function line_price(seq, val) {
+    var e = get_sub_control("up", seq);
+    if (arguments.length == 2) {
+        if (typeof (val) === "string") val = hs.safe.parseFloat(val);
+        if (use_hp_in_up)
+            $(e).val(hs.fmtAmountHP(val));
+        else
+             $(e).val(hs.fmtAmount(val));
+        return e; // must return e - used in caller funs.
+    }
+    else
+        return hs.safe.parseFloat($(e).val());
+}
+
+function line_upwtax(seq, val) {
+    var e = get_sub_control("ux", seq);
+    if (arguments.length == 2) {
+        if (typeof (val) === "string") val = hs.safe.parseFloat(val);
+       // $(e).val(hs.fmtAmount(val, !0));
+        $(e).val(hs.fmtAmountHP(val, !0));
+       
+        return e;
+    }
+    else
+        return hs.safe.parseFloat($(e).val());
+}
+
+function line_subtotal(seq,val) {
+    var e = get_sub_control("st", seq);
+   
+    if (arguments.length == 2) {
+        if (typeof (val) === "string") val = hs.safe.parseFloat(val);
+        if (use_hp_in_tax)
+            $(e).val(hs.fmtAmountHP(val, !0));
+        else
+            $(e).val(hs.fmtAmount(val, !0));
+        return e;
+    }
+    else
+        return hs.safe.parseFloat($(e).val());
+   
+}
+
+function line_taxable(seq, itm) {
+    if (itm != null && itm.item_tax_pct <= 0)
+        return 0;
+
+    return line_price(seq) * line_qty(seq) - line_discount(seq);
+  //  return line_subtotal(seq); 
+}
+
+
+function line_tax(seq,val) {
+    var e = get_sub_control("tx", seq);
+    if (arguments.length == 2) {
+        if (typeof (val) === "string") val = hs.safe.parseFloat(val);
+        if (use_hp_in_tax)
+            $(e).val(hs.fmtAmountHP(val, !0));
+        else
+            $(e).val(hs.fmtAmount(val, !0));
+        return e;
+    }
+    else
+        return hs.safe.parseFloat($(e).val());
+   
+}
+
+function line_subtotal_withtax(seq) {
+    return hs.safe.parseFloat(get_sub_control("rn", seq).val());
+}
+
+function line_unit_discount(seq) {
+    return hs.safe.parseFloat(get_sub_control("di", seq).val());
+}
+
+function line_discount(seq, val) {
+    var e = dl_e("ld", seq);
+    if (arguments.length == 2) {
+        if (typeof (val) === "string") val = hs.safe.parseFloat(val);
+        $(e).val(hs.fmtAmount(val,!0));
+        return e;
+    }
+    else
+        return hs.safe.parseFloat($(e).val());
+}
+
+function line_batch(seq) {
+    return get_sub_control("bn", seq).val();
+}
+
+function line_store(seq) {
+    return get_sub_control("wh", seq).val();
+}
+
+function line_memo(seq) {
+    return get_sub_control("nt", seq).val();
+}
+
+function line_item_id(seq) {
+    return get_item_id(get_sub_control("id", seq));
+}
+function line_item(seq) {
+    return get_item_by_id(line_item_id(seq));
+}
+
+function line_group(seq) {
+    return get_sub_control("gr", seq).val();
+}
+
+
+
+function get_doc_line(obj) {
+    obj = h$(obj);
+    var seq = getLineSeq(obj);
+
+    if (hs.isEmpty(seq))
+        return null;
+
+    return {
+        item_id: line_item_id(seq),
+        item: line_item(seq),
+        batch: line_batch(seq),
+        unit: line_unit(seq),
+        qty: line_qty(seq),
+        free: line_free(seq),
+        price: line_price(seq),
+        discount: line_unit_discount(seq),
+        store: line_store(seq)
+    };
+
+}
+
+function get_doc_line_by_seq(seq) {
+    
+    if (hs.isEmpty(seq))
+        return null;
+
+    return {
+        item_id: line_item_id(seq),
+        item: line_item(seq),
+        batch: line_batch(seq),
+        unit: line_unit(seq),
+        qty: line_qty(seq),
+        free: line_free(seq),
+        price: line_price(seq),
+        discount: line_unit_discount(seq),
+        store: line_store(seq)
+    };
+
+}
+
+function check_sales_line(obj) {
+
+    if (!use_sale_price)
+        return;
+
+    var line = get_doc_line(obj);
+    if (line == null)
+        return;
+        
+    if (line.item == null)
+        return;
+
+    var dc = get_doc_crncy();
+    var unit_cost_dc = convert_currency(get_item_unit_cost(line.item, line.unit), es.SC, dc);
+    if (unit_cost_dc == 0)
+        return;
+
+    var dc_title = get_currency_title(dc);
+
+    
+    var sales_price = line.price * line.qty;
+    var goods_cost = unit_cost_dc * (line.qty + line.free);
+    var profit_margin = sales_price - goods_cost;
+
+    var FMT = "<tr><td>{0}</td><td><b class='hl-text'>{1}</td></tr>";
+
+    var m = '';
+    m += "<table class='rep_tab'>";
+
+    if (profit_margin < 0) 
+        m += hs.ui.div('ui-err ui-tit', 'إجمالي سعر البيع أقل من سعر التكلفة'); //.f(sales_price) + K.hr;
+
+    if (line.free > 0) 
+        m += FMT.f('سعر البيع الفعلي للوحدة', hs.fmtAmount(sales_price / (line.qty + line.free)) );
+
+    m += FMT.f('إجمالي سعر البيع', hs.fmtAmount(sales_price));
+    if (es.vu_cost) {
+        m += FMT.f('إجمالي كلفة البضاعة', hs.fmtAmount(goods_cost));
+
+        if (profit_margin > 0)
+            m +=FMT.f('هامش الربح',hs.fmtAmount(profit_margin));
+        else
+            m += FMT.f('هامش الخسارة', hs.fmtAmount(profit_margin));
+    };
+
+    
+
+    m += "</table>";
+
+    m += 'العملة: ' + dc_title;
+
+      hs.msg.tip($(obj), m, 30, 300,true);
+
+    
+
+}
+
+function calc_free_cost(obj) {
+    if (!es.vu_cost)
+        return;
+
+    obj = h$(obj);
+    var seq = getLineSeq(obj);
+
+    if (hs.isEmpty(seq))
+        return;
+    
+    var fu = line_free(seq);
+    if (fu <= 0)
+        return;
+
+    var item = line_item(seq);
+    if (item == null)
+        return;
+
+    var dc=get_doc_crncy();
+    var unit = line_unit(seq);
+    var unit_cost_dc = convert_currency(get_item_unit_cost(item, unit), es.SC, dc );
+    
+    var fu_cost = unit_cost_dc * fu;
+
+    if (fu_cost > 0) {
+        var m = 'كلفة الكمية المجانية: ' + hs.fmtAmount(fu_cost) + " " + get_currency_title(dc);
+        hs.msg.tip($(obj), m, 15, 200);
+    };
+}
+
+function reset_line_item(obj) {
+    h$(obj).attr('data-sel_id', '').exList('reset').focus();
+}
+
+function get_item_qty_list(e) {
+    e = h$(e);
+    var seq = getLineSeq(e);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var item_id = line_item_id(seq);
+    
+    if (hs.isEmpty(item_id))
+        return;
+
+   
+    var item_data = get_item_by_id(item_id);
+   
+    
+    // service item
+    if (item_data.item_type != "M")
+        return;
+
+    var unit_id = get_sub_control("un", seq).val() || '';
+    
+    var url = "/app/fms/?fm=es-item&cmd=list-stock&ajax=y&id=" + item_id + "&store-id=" + hs.fm.val("store_id") + "&cov-no=" + hs.fm.val("cov_no") + "&item-unit=" + unit_id + "&doc-type=" + hs.fm.val("doc_type");
+   
+    hs.msg.toast("loading item qty: " + item_id, 2);
+
+    do_ajax(url, null, function (result, rc) { if (rc == 0) hs.msg.callout(result, null, 0, null, 300, 0, "co-itm-qty"); else es.noAjax(); }, e);
+}
+
+function show_cov_item_trans(e) {
+    e = h$(e);
+    var seq = getLineSeq(e);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var item_id = line_item_id(seq), cov_no = hs.fm.val("cov_no");
+
+    if (hs.isEmpty(item_id)) {
+        hs.msg.required(e);
+        return;
+    }
+
+    if (hs.isEmpty(cov_no)) {
+        if (hs.e.exists("cov_name"))
+            hs.msg.required("cov_name");
+        else
+            hs.msg.required("cov_no");
+        return;
+    }
+       
+    
+    
+
+    var url = "/app/fms/?fm=es-sale-ex-stats&cmd=find&fm-mode=all-docs&cmd-mode=query&find-var=prd-doc-cov-item&sind=y&init-values=y&i-max-list-rc=50&auto-run=y&i-doc_type=" + hs.fm.val("doc_type") + "&i-cov_no=" + cov_no + "&i-item_id=" + item_id;
+
+    // url+="&no-ctrls=y";
+
+    ShowDlg(url);
+
+    /*
+    // var url = "/app/fms/?fm=es-item&cmd=list-stock&ajax=y&id=" + item_id + "&store-id=" + hs.fm.val("store_id") + "&cov-no=" + hs.fm.val("cov_no") + "&item-unit=" + unit_id + "&doc-type=" + hs.fm.val("doc_type");
+
+    hs.msg.toast("loading item trans: " + item_id, 2);
+
+    do_ajax(url, null, function (result, rc) { if (rc == 0) hs.msg.callout(result, null, 0, null, 300, 0, "co-itm-qty"); else es.noAjax(); }, e);
+    */
+
+}
+
+
+
+
+function bskt_init() {
+
+    lifecycle.addEventListener('statechange', function (ev) {
+        if (ev.oldState == "passive" && ev.newState == "active") 
+            bskt_set_count();
+    });
+};
+
+function basket_get_line(bskt, item_id, item_unit) {
+
+    return bskt.find(function (e) { return e.item_id == item_id && e.item_unit == item_unit; }) || null;
+
+   // return bskt.find(e => e.item_id == item_id && e.item_unit == item_unit);
+
+    
+}
+
+function client_basket_add_item(bskt_id, item_id, item_unit, qty, up, note) {
+    if (hs.isEmpty(bskt_id))
+        bskt_id = 'bskt';
+
+    var bskt = hs.cache.getItem(bskt_id);
+    if (bskt == null)
+        bskt = [];
+
+    var line = basket_get_line(bskt, item_id, item_unit);
+
+    if (line != null)
+        line.unit_count += qty;
+    else
+        bskt.push({
+        item_id: item_id,
+        item_unit: item_unit,
+        unit_count: qty,
+        unit_price: up,
+        item_note: note
+    });
+
+    hs.cache.setItem(bskt_id, bskt);
+}
+
+function basket_print_items() {
+
+    var bskt = hs.cache.getItem("bskt");
+    if (bskt == null)
+        return "basket is empty";
+
+    var s = '';
+    var seq, total, c = 0;
+    var item_id, item, item_unit, item_name;
+    var cl_item_units = new CodeList(get_item_units_codes());
+    for (i = 0; i < bskt.length; i++) {
+        var line = bskt[i];
+
+        item_id = line.item_id;
+        if (hs.isEmpty(item_id))
+            continue;
+
+        total = line.unit_count * line.unit_price;
+       
+       
+            item_unit = line.item_unit;
+            item = get_item_by_id(item_id);
+            if (item != null) {
+
+                var t = "<td>" + hs.link("-", "js:on_pos_add_items('{0}','{1}','{2}',{3},{4})".f(i, item_id, item_unit, line.unit_price, -1), "minus") + "</td>"
+                var qty = hs.link(line.unit_count, "js:on_pos_add_items('{0}','{1}','{2}',{3},{4})".f(i, item_id, item_unit, line.unit_price, 1), "b");
+
+                item_name = item.item_name + " / " + cl_item_units.getTitle(item_unit);
+                item_name = hs.link(item_name, "js:show_pos_item_desc(" + i + ")");
+                s += '<tr class="r-' + (c++) % 2 + '" ><td>' + item_name + '</td><td>' + line.unit_price + '</td><td><b>' + qty + '</b></td><td>' + total + '</td>' + t + '</tr><tr>';
+            } else
+                hs.msg.toast("item not found, or has no qty:" + item_id);
+        
+    };
+
+    return s;
+
+}
+
+// --------------------------
+
+function basket_show() {
+    var s = '';
+    s += '<table class="rep_tab child-items-list pos"><tr class="head"><td style="min-width:100px;">الصنف</td><td>السعر</td><td>عدد</td><td colspan=2>إجمالي</td></tr>';
+    s += basket_print_items();
+   
+    var price = hs.safe.parseFloat(hs.fm.val("price"));
+
+
+    s += '<tr class="head"><td>الإجمالي</td><td colspan=4><span id="inv_total">' + price + '</span></td></tr>';
+
+    var doc_charges = hs.safe.parseFloat(hs.fm.val("doc_charges"));
+    if (doc_charges != 0)
+        s += '<tr class="head"><td>الأعباء</td><td class="hl-text" colspan=4>' + doc_charges + '</td></tr>';
+
+    var discount = hs.safe.parseFloat(hs.fm.val("discount"));
+    if (discount != 0)
+        s += '<tr class="head"><td>التخفيض</td><td class="hl-text" colspan=4>' + discount + '</td></tr>';
+
+    var net_amount = hs.safe.parseFloat(hs.fm.val("net_amount"));
+    if (net_amount != 0 && ((doc_charges + discount) != 0))
+        s += '<tr class="head"><td>المطلوب</td><td class="hl-text" colspan=4>' + net_amount + '</td></tr>';
+
+
+    s += '</table>'; // </td></tr>
+
+    if (hs.e.exists("hos-itm-lst"))
+        $("#hos-itm-lst").html(s);
+    else
+        hs.msg.callout(s, null, 0, null, 400, 10, "co-pos-items");
+
+}
+
+
+function add_to_purch_list(e) {
+    e = h$(e);
+    var seq = getLineSeq(e);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var item_id = line_item_id(seq);
+
+    if (hs.isEmpty(item_id))
+        return;
+
+
+    var item_data = get_item_by_id(item_id);
+        
+
+    var unit_id = get_sub_control("un", seq).val();
+
+    var qty = line_qty(seq);
+
+    var url = "/app/fms/?fm=es-item&cmd=add2purch&ajax=y&id=" + item_id + "&store-id=" + hs.fm.val("store_id") + "&cov-no=" + hs.fm.val("cov_no") + "&item-unit=" + unit_id + "&doc-type=301"  + "&qty=" + qty;
+
+    hs.msg.toast("Add to basket: " + item_id, 2);
+
+    do_ajax(url, null, function (result, rc) { if (rc == 0) hs.msg.callout(result, null, 0, null, 300, 0, "co-itm-qty"); else es.noAjax(); }, e);
+
+}
+
+function bskt_set_count(c, chg_no) {
+
+    if (arguments.length < 1) {
+        c = hs.cache.getTextValue("bskt-itm-cnt");
+        c = c || 0;
+        //hs.msg.toast("bskt cache: " + c);
+    }
+    else {
+
+        hs.cache.setValue("bskt-itm-cnt", c.toString());
+        //hs.msg.toast("bskt: " + c);
+
+    };
+
+
+    var e = $("#bskt-itm-cnt", parent.top.document);
+
+    if (e.length == 0)
+        e = $("#bskt-itm-cnt", parent.document);
+
+    if (e.length == 0)
+        e = $("#bskt-itm-cnt");
+
+    
+
+
+    if (c >= 0)
+        e.text(c.toString());
+
+    return c.toString();
+
+
+}
+
+function bskt_set_count_XX(c, chg_no) {
+
+    if (arguments.length < 1) {
+        c = hs.cache.getTextValue("bskt-itm-cnt");
+        hs.msg.toast("bskt cache: " + c);
+        chg_no = 0;
+    }
+    else {
+
+
+        var last_chg_no = hs.safe.parseInt(hs.cache.getTextValue("chg-no"));
+        if (last_chg_no > chg_no)
+            return;
+
+
+        hs.cache.setValue("bskt-itm-cnt", c.toString());
+        hs.cache.setValue("chg-no", c.toString());
+        hs.msg.toast("bskt: " + c);
+
+    };
+
+
+    var e = $("#bskt-itm-cnt", parent.top.document);
+
+    if (e.length == 0)
+        e = $("#bskt-itm-cnt", parent.document);
+
+    if (e.length == 0)
+        e = $("#bskt-itm-cnt");
+
+
+
+
+    if (c >= 0)
+        e.text(c.toString());
+
+    if (e.length > 0) {
+        hs.cache.setValue("bskt-itm-cnt", "*");
+        hs.cache.setValue("chg-no", "0");
+    }
+
+
+}
+function add_to_user_basket(item_id,qty) {
+
+    if (hs.isEmpty(item_id)) {
+        item_id = hs.fm.itemId();
+
+        if (hs.isEmpty(item_id))
+            return;
+    }
+
+
+   
+    
+
+    var e = $("#bskt-itm-cnt", top.document);
+    var c = hs.safe.parseInt(e.text()) + qty;
+
+    if (c >= 0)
+        e.text(c.toString());
+  var flvrs = hs.e.exists("flv_value") ? h$("flv_value").val() : "no-change"; // multi-select
+
+    //var flvrs = hs.e.exists("flv") ? h$("flv").val() : "";
+
+   // hs.msg.toast(flvrs);
+
+    var url = "/app/fms/?fm=e-shop&cmd=add2bskt&ajax=y&id=" + item_id + "&fm-mode=" + hs.fm.getMode() + "&qty=" + qty + "&flvrs=" + flvrs;
+    do_ajax(url, null, function (result, rc) { if (rc == 0) hs.eval(result); else es.noAjax(); }, null);
+
+}
+
+
+
+
+function on_item_batch_focus(e) {
+
+    if (!es.ajax_calls)
+        return;
+
+    
+    var seq = getLineSeq(e);
+
+    if (hs.isEmpty(seq))
+        return;
+
+    var item_id = line_item_id(seq);
+    
+    if (hs.isEmpty(item_id)) {
+        item_id = get_item_id($("#item_id"));
+    };
+
+    if (hs.isEmpty(item_id))
+        return;
+
+    var res_div = "item-stock-list-" + seq;
+
+    var line_seq_item_id_cls = res_div + "-" + item_id;
+
+    $(".item-stock-list:not('." + line_seq_item_id_cls + "')").remove();
+    
+    e = $(e);
+      
+    
+    var item_data = get_item_by_id(item_id);
+    var batch_type = item_data.batch_type;
+
+    
+    if (hs.isEmpty(batch_type) || batch_type == '0') {
+
+          focus_next(e);
+
+          if (hs.e.isBusy(e))
+            return;
+      
+         get_item_qty_list(e);
+        
+        return; // item configured for no batch
+    };
+
+    if (hs.e.isReadonly(e))
+        return;
+
+    // service item
+    if (item_data.item_type != "M") {
+        if (batch_type == '2') //expdate
+            hs.e.datepicker(e, 3, true);
+        return;
+    };
+    
+    
+    if (pd.SI == 1) {  // stock increase
+        if (batch_type == '2' || batch_type == '8') { 
+            hs.e.datepicker(e, 3, true);
+        };
+
+        if (batch_type == '6' || batch_type == 'x7') {
+            hs.e.data(e, 'def_at', batch_type);
+            fi_acc_pick_list(hs.e.getId(e));
+            return;
+        }
+
+        if (batch_type == '4' || batch_type == '5')
+            return; // batch will be selected from coded list
+
+      //  return; // 19.12.2018 - to allow select same existing batch
+    }
+
+   
+    
+
+    
+   
+    if (hs.e.isBusy(e))
+        return;
+
+    $("#co-itm-qty").remove();
+
+
+    if ($("." + line_seq_item_id_cls).length > 0)
+        return;
+
+
+    create_suggest_element($(e).attr("id"), res_div, true, 300);
+
+    
+    h$(res_div).addClass(line_seq_item_id_cls);
+
+    
+    // 
+    var unit_id = line_unit(seq);
+    var url = "/app/fms/?fm=es-item&cmd=list-stock&ajax=y&is-batch=y&id=" + item_id + "&store-id=" + hs.fm.val("store_id") + "&cov-no=" + hs.fm.val("cov_no") + "&item-unit=" + unit_id + "&doc-type=" + hs.fm.val("doc_type");
+    
+    
+     url += "&select-target=" + $(e).attr("id");
+    
+
+    // hs.msg.toast(url);
+
+    hs.msg.toast("loading item batches qty: " + item_id, 1);
+
+    do_ajax(url, res_div, null, e);
+
+    on_item_batch_menu_setup(e)
+}
+
+
+
+
+function on_item_batch_blur(e) {
+    var seq = getLineSeq(e);
+    if (hs.isEmpty(seq))
+        return;
+  
+    var res_div = "item-stock-list-" + seq;
+    
+    delayDelElm(res_div, 200);
+}
+
+
+// ---------------------------
+
+function line_item_focus_next(obj) {
+     focus_next(obj);
+     return;
+
+
+    var seq = hs.safe.parseInt(getLineSeq($(obj))) + 1;
+
+    var itemList = $("#" + get_sub_control_id("id", seq)); //, parent.document.body);
+
+    $(itemList).focus();
+}
+
+function on_item_batch_select(target_key_ctl, bat_id, store_id, move_next) {
+
+   // window.alert("t=" + target_key_ctl + ";bat=" + bat_id + "store=" + store_id);
+
+    $("#" + target_key_ctl).val(bat_id);
+
+    var $target = $("#" + target_key_ctl); //, parent.document.body);
+
+    $target.val(bat_id);
+
+    var seq = getLineSeq($target);
+
+    var $store = $("#" + get_sub_control_id("wh", seq)); //, parent.document.body);
+
+    if ($store.length != 0) {
+        $store.val(store_id);
+        if (move_next)
+            line_item_focus_next($target)
+            //line_item_focus_next($store);
+    }
+    else {
+        if (move_next)
+            line_item_focus_next($target);
+    }
+
+
+}
+
+
+// -------------------------
+
+function adjust_amount(amount, divisible_by) {
+    amount = Math.ceil(amount);
+
+    if (divisible_by != 0)
+        while (amount % divisible_by != 0)
+            amount = amount + 1;
+
+    amount = hs.safe.round(amount);
+
+    return amount;
+}
+
+// ----------------------------
+
+function on_item_crncy_changed() {
+    var crncy_title = " / " + $("#item_crncy").find(':selected').text();
+    
+    $(".item-crncy").text(crncy_title);
+
+    crncy_title = " / " + $("#item_crncy_fc").find(':selected').text();
+
+    $(".item-crncy-fc").text(crncy_title);
+}
+
+function on_item_crncy_fc_changed() {
+    var crncy_title = " / " + $("#item_crncy_fc").find(':selected').text();
+
+    $(".item-crncy-fc").text(crncy_title);
+
+    var item_crncy = $('#item_crncy').val()
+    var item_crncy_fc = $('#item_crncy_fc').val();
+
+    $('#u1_price_fc').val(convert_currency(hs.safe.parseFloat($('#u1_price').val()), item_crncy, item_crncy_fc));
+    $('#u2_price_fc').val(convert_currency(hs.safe.parseFloat($('#u2_price').val()), item_crncy, item_crncy_fc));
+    $('#u3_price_fc').val(convert_currency(hs.safe.parseFloat($('#u3_price').val()), item_crncy, item_crncy_fc));
+}
+
+
+
+function on_item_u1_to_u2_convert_changed() {
+    var u_id = $('#u2_id').val();
+    var n = hs.safe.parseFloat($('#u1_to_u2').val());
+
+    if (hs.isEmpty(u_id) || n <= 0) {
+        $('#u1_to_u2, #u2_cost, #u2_price, #u2_min_price').val('0');
+        return;
+    };
+   
+    $('#u2_cost').val(hs.safe.round(hs.safe.parseFloat($('#u1_cost').val()) / n).toString());
+    $('#u2_price').val(adjust_amount(hs.safe.parseFloat($('#u1_price').val()) / n, es.AA).toString());
+    $('#u2_min_price').val(adjust_amount(hs.safe.parseFloat($('#u1_min_price').val()) / n, es.AA).toString());
+
+    on_item_u2_to_u3_convert_changed();
+}
+
+//------------------------------
+
+function on_item_u2_to_u3_convert_changed() {
+    var u_id = $('#u3_id').val();
+    var n = hs.safe.parseFloat($('#u2_to_u3').val()) || 0;
+
+    if (hs.isEmpty(u_id) || n <= 0) {
+        $('#u2_to_u3, #u3_cost, #u3_price, #u3_min_price').val('0');
+        return;
+    };
+
+    $('#u3_cost').val(hs.safe.round(hs.safe.parseFloat($('#u2_cost').val()) / n).toString());
+    $('#u3_price').val(adjust_amount(hs.safe.parseFloat($('#u2_price').val()) / n, es.AA).toString());
+    $('#u3_min_price').val(adjust_amount(hs.safe.parseFloat($('#u2_min_price').val()) / n, es.AA).toString());
+}
+
+// -------------------------------
+
+function adjust_unit_convert_labels(isFmLoad) {
+
+    var t = $('#u1_id').find(':selected').text();
+    $('.item-u1').text(t);
+
+    t = $('#u2_id').find(':selected').text();
+    $('.item-u2').text(t);
+
+    t = $('#u3_id').find(':selected').text();
+    $('.item-u3').text(t);
+
+    var flds = '#u1_to_u2, #u2_cost, #u2_price, #u2_min_price';
+
+    if (hs.isEmpty($("#u2_id").val()))
+        $(flds).val('0').hide();
+    else 
+        $(flds).show();
+
+    flds = '#u2_to_u3, #u3_cost, #u3_price, #u3_min_price';
+    if (hs.isEmpty($("#u3_id").val()))
+        $(flds).val('0').hide();
+    else
+        $(flds).show();
+
+    var fm_mode = getUrlParameter("fm-mode");
+    var fm_cmd = getUrlParameter("cmd");
+
+    if (isFmLoad && fm_cmd == "edit") {
+
+        hs.e.enable("u1_id", false);
+        hs.e.enable("u2_id", false);
+        hs.e.enable("u3_id", false);
+
+        if (fm_mode == "change-units") {
+            if (!hs.isEmpty($("#u1_id").val()))
+                hs.e.enable("u1_id", true);
+
+            if (!hs.isEmpty($("#u2_id").val()))
+                hs.e.enable("u2_id", true);
+
+            if (!hs.isEmpty($("#u3_id").val()))
+                hs.e.enable("u3_id", true);
+        };
+
+        if (fm_mode == "add-units") {
+            if (hs.isEmpty($("#u1_id").val()))
+                hs.e.enable("u1_id", true);
+
+            if (hs.isEmpty($("#u2_id").val()))
+                hs.e.enable("u2_id", true);
+
+            if (hs.isEmpty($("#u3_id").val()))
+                hs.e.enable("u3_id", true);
+        };
+    };
+
+}
+
+function enableChangeItemUnits() {
+    hs.e.enable("u1_id", true);
+    hs.e.enable("u2_id", true);
+    hs.e.enable("u3_id", true);
+}
+
+function resetItemUnit(u) {
+    $("#u" + u +"_id").val("");
+    $("#u"+ u +"_cost").val("");
+    $("#u" + u +"_price").val("");
+    $("#u"+ u +"_min_price").val("");
+}
+
+function insertMidItemUnits() {
+
+    if (!hs.isEmpty($("#u3_id").val())) {
+        hs.msg.error("لا يمكن الإضافة");
+        return;
+    };
+
+    $("#u3_id").val($("#u2_id").val());
+   
+    hs.e.enable("u2_id", true);
+    hs.e.enable("u3_id", false);
+
+    resetItemUnit("2");
+
+    $("#u1_to_u2").val("0");
+   
+
+}
+
+function addBigItemUnits() {
+
+    if (!hs.isEmpty($("#u3_id").val())) {
+        hs.msg.error("لا يمكن إضافة وحدة أكبر");
+        return;
+    };
+
+  
+
+
+    var inst = "يمكن تفكيك الوحدة الأكبر إلى : ";
+    var unit = $('#u1_id').find(':selected').text();
+
+    hs.inputBox.show(false,null,"إضافة وحدة أكبر", inst, unit, null, "", "", function () {
+        // window.alert(hs.inputBox.value);
+        var n = hs.safe.parseInt(hs.inputBox.value);
+
+        if (n <= 1) {
+            hs.msg.error("القيمة المدخلة غير مباسبة");
+            return;
+        };
+
+        $("#u3_id").val($("#u2_id").val());
+        $("#u3_cost").val($("#u2_cost").val());
+        $("#u3_price").val($("#u2_price").val());
+        $("#u3_min_price").val($("#u2_min_price").val());
+        $("#u2_to_u3").val($("#u1_to_u2").val());
+
+
+        $("#u2_id").val($("#u1_id").val());
+        $("#u2_cost").val($("#u1_cost").val());
+        $("#u2_price").val($("#u1_price").val());
+        $("#u2_min_price").val($("#u1_min_price").val());
+
+        resetItemUnit("1");
+
+
+        adjust_unit_convert_labels(false);
+
+        // ------
+
+
+        $("#u1_to_u2").val(n.toString());
+
+        $('#u1_cost').val(hs.safe.round(hs.safe.parseFloat($('#u2_cost').val()) * n).toString());
+        $('#u1_price').val(adjust_amount(hs.safe.parseFloat($('#u2_price').val()) * n, es.AA).toString());
+        $('#u1_min_price').val(adjust_amount(hs.safe.parseFloat($('#u2_min_price').val()) * n, es.AA).toString());
+
+        hs.e.enable("u1_id", true);
+        hs.e.enable("u2_id", false);
+        hs.e.enable("u3_id", false);
+    });
+}
+
+// ---
+
+function get_currency_list() {
+    return hs.cache.getItem('crncy_data_list');
+}
+
+// ************* //
+
+hs.cr = {
+    _cl: null,
+
+    codelist: function () {
+        if (hs.cr._cl == null) {
+            hs.cr._cl = new CodeList(hs.nol.getCodeListArray(get_currency_list(), null, function (d) {
+                return d.cur_short;
+            }));
+        };
+
+        return this._cl;
+    },
+
+    fill: function (e) {
+        hs.cr.codelist().fillSelectList(e);
+    }
+
+
+} // crncy
+
+// ************* //
+
+function str_rep(s, n) {
+    var t="";
+    for (var i = 0; i < n; i++)
+        t += s;
+
+    return t;
+}
+
+var _acc_arr = null;
+
+function fi_acc_get_all() {
+
+   // if (_acc_arr == null)
+        _acc_arr = hs.cache.getItem('acc_data_list');
+
+  //  window.alert(_acc_arr.length);
+
+    return _acc_arr;
+}
+
+// ********** FiAcc ************ //
+
+// FinAcc Fld Seq => 0:no, 1:name, 2:parent, 3:hier, 4:acc_crncy, 5:linked_no, 6: type , 7:rep, 8:nat, 9:depth
+var FiAcc = {
+
+    getMatched: function (matchFunc) {
+        var acc_all = fi_acc_get_all();
+        var matched_arr = [], i, c = 0;
+        if (acc_all == null)
+            return null;
+
+        for (i = 0; i < acc_all.length; i++) {
+
+           
+            if (matchFunc(acc_all[i])) {
+                matched_arr[c++] = acc_all[i];
+            };
+        };
+        
+        return matched_arr;
+    },
+
+    getMatchedEx: function (matchFunc) { // reflect depth
+        var acc_all = fi_acc_get_all();
+        var matched_arr = [], i, c = 0;
+        if (acc_all == null)
+            return null;
+
+        for (i = 0; i < acc_all.length; i++) {
+
+            
+         //  acc_all[i][1] = str_rep("_", acc_all[i][9] - 1) + " " + acc_all[i][1]; // the accounts should be specially ordered to form the tree
+
+            if (matchFunc(acc_all[i])) {
+                matched_arr[c++] = acc_all[i];
+            };
+        };
+
+        
+
+        return matched_arr;
+    },
+
+    get: function (acc_no) {
+        var i, acc_all = fi_acc_get_all();
+        if (acc_all == null)
+            return null;
+        
+        for (i = 0; i < acc_all.length; i++) {
+            if (acc_all[i][0]==acc_no)
+                return acc_all[i];
+        };
+
+        return null; // not found
+    },
+
+    getAccCrncy: function (acc_no) {
+        var acc = FiAcc.get(acc_no);
+        return acc == null ? null : acc[4];
+    },
+
+    getSubList: function (ap, at) {
+        return FiAcc.getMatched(function (ac) {
+            return ac[3] == '2' &&  // subacc
+                  (ap == null || ac[2] == ap || ac[5] == ap) && // parent or linked
+                  (at == null || ac[6] == at) // type
+            ;
+        });
+    },
+
+    getSubs: function () {
+        return FiAcc.getSubList(null, null);
+    },
+
+    getMains: function () {
+        return FiAcc.getMatchedEx(function (ac) {
+            return ac[3] == '1'; // main acc
+        });
+    },
+
+    getGLs: function () {
+        return FiAcc.getMatched(function (ac) {
+            return ac[3] == '2' && (ac[6] == '0' || hs.isEmpty(ac[6])); // subacc=2 & acc_type=0
+        });
+    },
+
+    getAllAnals: function () {
+        return FiAcc.getMatched(function (ac) {
+            return ac[3] == '2' && !hs.isEmpty(ac[5]); // subacc=2 & have linked acc=5
+        });
+    },
+
+    getGLsByRepNat: function (rep,nat) {
+        return FiAcc.getMatched(function (ac) {
+            return ac[3] == '2' && (ac[6] == '0' || hs.isEmpty(ac[6])) && ac[7]==rep && ac[8]==nat; // subacc=2 & acc_type=0
+        });
+    },
+
+    getChildern: function (acc_par) {
+        return FiAcc.getSubList(acc_par, null);
+    },
+
+    getAnals: function (acc_type) {
+        if (hs.isEmpty(acc_type))
+            return FiAcc.getSubs();
+              
+        if (acc_type == "A")
+            return FiAcc.getAllAnals(); 
+
+        if (acc_type == '0')
+            return FiAcc.getGLs();
+
+        if (acc_type == '01')
+            return FiAcc.getGLsByRepNat('1', -1);
+
+        if (acc_type == '02')
+            return FiAcc.getGLsByRepNat('1', 1);
+
+        if (acc_type == '03')
+            return FiAcc.getGLsByRepNat('2', -1);
+
+        if (acc_type == '04')
+            return FiAcc.getGLsByRepNat('2', 1);
+
+        if (acc_type == 'MA')
+            return FiAcc.getMains();
+ 
+        // hs.msg.toast("selected type: " + acc_type);
+
+        if (acc_type == 'R') // ana ref
+            acc_type = '8'; // tempo: emps only
+
+        if (acc_type.length == 1)
+            return FiAcc.getSubList(null, acc_type);
+        else
+            return FiAcc.getSubList(acc_type, null);
+    },
+
+    getCusts: function () {
+        return getAnals('6');
+    },
+
+    getVends: function () {
+        return getAnals('7');
+    },
+
+    populateDropList: function (e, acc_type, reset_list) {
+        if (arguments.length < 3)
+            reset_list = true;
+
+        var cl = new CodeList(FiAcc.getAnals(acc_type));
+        cl.fillSelectList(e,0,reset_list);
+    }
+
+   
+
+    }; // FiAcc
+
+// ****************************** //
+
+
+
+var _acc_type_arr = null;
+function get_acc_types() {
+    if (_acc_type_arr == null)
+        _acc_type_arr = hs.cache.getItem("gl-acc-types");
+    return _acc_type_arr;
+}
+
+function fill_acc_types_list(e) {
+    hs.list.fill(e, get_acc_types(), 1);
+}
+
+function get_currency_title(crncy) {
+    if (hs.isEmpty(crncy))
+        return '';
+    var crncy_data = hs.nol.get_item(get_currency_list(), crncy);
+    return (crncy_data == null) ? crncy : crncy_data.cur_short;
+}
+
+function get_doc_crncy() {
+    return hs.fm.val("doc_crncy");
+}
+
+function get_exchange_rate(crncy) {
+
+    if (crncy == es.CC)
+        return 1;
+
+    var crncyList = get_currency_list();
+    if (crncyList == null)
+        return 1;
+    else {
+
+        var doc_crncy = $("#doc_crncy").val();
+       
+        if (!hs.isEmpty(doc_crncy) && doc_crncy == crncy) {
+            var doc_crncy_exrate = hs.safe.parseFloat($("#doc_crncy_exrate").val(), 0);
+            if (doc_crncy_exrate > 0) {
+                hs.trace("doc_crncy_exrate=" + doc_crncy_exrate);
+                return doc_crncy_exrate;
+            };
+        };
+        
+        var crncy_data = hs.nol.get_item(crncyList, crncy);
+        return (crncy_data == null) ? 0 : crncy_data.ex_rate;
+    };
+}
+
+function convert_amount_to_cc(amnt, amnt_crncy) {
+    if (isNaN(amnt))
+        return 0;
+
+    if (hs.isEmpty(amnt_crncy))
+        return amnt;
+    else
+        return hs.safe.round( amnt * get_exchange_rate(amnt_crncy));
+}
+
+
+function convert_currency(amount, from_currency, to_currency) {
+
+    if (hs.isEmpty(from_currency))
+        from_currency = es.CC;
+
+    if (hs.isEmpty(to_currency))
+        to_currency = es.CC;
+
+    if (from_currency == to_currency)
+        return amount;
+
+    if (from_currency == es.CC)
+        return amount / get_exchange_rate(to_currency);
+
+    if (to_currency == es.CC)
+        return amount * get_exchange_rate(from_currency);
+
+    // cross exchange 
+    var amount_cc = convert_currency(amount, from_currency,es.CC);
+
+    return convert_currency(amount_cc, es.CC, to_currency);
+}
+
+
+function on_doc_crncy_changed(amnt_fld_id, crncy_lst_id, crncy_exrate_id) {
+
+    if (hs.isEmpty(crncy_exrate_id))
+        return;
+    
+    var amnt_val = hs.safe.parseFloat($('#' + amnt_fld_id).val()) || 0;
+    var crncy_code = $('#' + crncy_lst_id).val();
+    var info;
+
+    var crncy_exrate_fld = h$(crncy_exrate_id);
+
+    if (hs.isEmpty(crncy_code))
+        crncy_code = es.CC;
+
+    if (crncy_code == es.CC)
+        $(crncy_exrate_fld).val('');
+    else
+        if (!hs.e.isReadonly(crncy_exrate_fld))
+            $(crncy_exrate_fld).attr('placeholder', get_exchange_rate(crncy_code));
+
+    
+    if (crncy_code == es.CC || amnt_val == 0)
+        info = '';
+    else {
+        var exrate = hs.safe.parseFloat($(crncy_exrate_fld).val());
+        if (exrate == 0)
+            info = '=' + convert_amount_to_cc(amnt_val, crncy_code);
+        else
+            info = '=' + hs.safe.round(amnt_val * exrate);
+    };
+
+    $("#cc_" + amnt_fld_id).html(info);
+
+}
+
+
+
+function es_doc_reset_prices() {
+
+    
+    // if (!use_sale_price) return;
+
+    if (!hs.fm.isEntry())
+        return;
+    
+    
+    $("#discount, #doc_charges, #pnet_amount, #paid, #num02").val("");
+    
+    
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+        var item_id = line_item_id(seq);
+        if (!hs.isEmpty(item_id)) {
+            get_sub_control("di", seq.toString()).val("");
+            on_item_unit_changed(get_sub_control("un", seq.toString()), seq);
+
+            if (line_price(seq) <= 0)
+                hs.e.enable(line_price$(seq));
+        };
+    };
+}
+
+
+
+
+function show_change_doc_crncy_dlg() {
+
+    var crncy = get_doc_crncy();
+    if (crncy == es.CC) {
+        var m = "المستند بالعملة المحلية";
+        hs.msg.error(m);
+        hs.msg.tip("doc_crncy", m);
+        return;
+    };
+        
+
+    var s = "تغيير الأسعار التي في المستند إلى العملة المحلية بسعر تحويل: " + get_exchange_rate(crncy);
+
+    ConfirmUrl("js:on_sales_doc_currency_changed(null, true, true)", s);
+}
+
+function on_sales_doc_currency_changed(crncy_lst, confirmed, to_cc) {
+
+    // if (!use_sale_price) return;
+
+    if (!hs.fm.isEntry())
+        return;
+
+    
+
+    if (arguments.length < 2) 
+        confirmed = false;
+
+    if (arguments.length < 3)
+        to_cc = false;
+
+   // if (use_sale_price)
+       // confirmed = true;
+
+    if (crncy_lst == null)
+        crncy_lst = "doc_crncy";
+    
+    var crncy_code = h$(crncy_lst).val();
+
+    if (hs.isEmpty(crncy_code))
+        return;
+
+    var crncy_exrate = get_exchange_rate(crncy_code);
+    
+
+    var is_fc = crncy_code != es.CC;
+
+    if (to_cc) {
+        confirmed = true;
+    }
+
+    
+    if (!confirmed) {
+        ConfirmUrl("javascript:on_sales_doc_currency_changed(null,true,false)",
+            is_fc ? "هل تريد تحويل كل المبالغ والأسعار إلى العملة الجديدة بحسب سعر التحويل المحدد في الفاتورة: " + crncy_exrate : "تغيير الأسعار في المستند إلى الأسعار المحددة في بيانات الأصناف");
+        return;
+    };
+
+
+    $("#discount, #doc_charges, #pnet_amount, #paid, #num02").val("");
+
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+        var item_id = line_item_id(seq);
+        if (!hs.isEmpty(item_id)) {
+            get_sub_control("di", seq.toString()).val("");
+     
+            if ( to_cc || is_fc) {
+                var price= line_price(seq);
+                if (to_cc)
+                    price = convert_amount_to_cc(price, crncy_code);
+                else
+                    price = convert_currency(price, es.CC, crncy_code);
+                
+                line_price$(seq).val(hs.safe.roundHP(price).toString());
+                //line_price$(seq).val(hs.safe.round(price).toString());
+            }
+            else
+                on_item_unit_changed(get_sub_control("un", seq.toString()), seq);
+
+            if (line_price(seq) <= 0)
+                hs.e.enable(line_price$(seq));
+        };
+    };
+
+
+    if (!hs.e.isReadonly("doc_crncy_exrate"))
+        $("#doc_crncy_exrate").attr('placeholder', crncy_exrate);
+
+
+    if (is_fc)
+        es_doc_recalc();
+
+    if (to_cc) {
+        $("#doc_crncy_exrate").val("").hide();
+        $("#doc_crncy").val(es.CC);
+        es_doc_recalc();
+    };
+
+    hs.msg.tip(crncy_lst, "بسبب تغيير العملة، سيتم تصفير المبالغ (المدفوعة/التخفيض/الأعباء)  في المستند", 8);
+}
+
+/*
+function on_paytype_changed_ORG(e) {
+    var pt = h$(e).val();
+    
+    var is_cash = hs.isEmpty(pt) || pt == '1';
+    var cl;
+       
+    if (is_cash) {
+        $("#r_check_no, #r_check_date, #r_post_method").hide();
+        cl = new CodeList(es.tlrs);
+    }
+    else {
+        $("#r_check_no, #r_check_date, #r_post_method").show();
+        cl = new CodeList(es.banks);
+    };
+    
+    
+    cl.fillSelectList('cash_acc_no');
+}
+*/
+
+// theExList.options.codelist = FiAcc.getAnals(at_val);
+
+function on_paytype_changed(e) {
+    var pt = h$(e).val();
+
+    var is_cash = hs.isEmpty(pt) || pt == '1';
+    var cl;
+
+    if (is_cash) {
+        $("#r_check_no, #r_check_date, #r_post_method").hide();
+        cl = new CodeList(FiAcc.getAnals('1'));
+    }
+    else {
+        $("#r_check_no, #r_check_date, #r_post_method").show();
+        cl = new CodeList(FiAcc.getAnals('2'));
+    };
+
+
+    cl.fillSelectList('cash_acc_no', 0, true, !is_page_loaded);
+
+   
+}
+
+
+
+
+// *** offline pos print
+
+
+
+
+function pos_offline_print_items_ORG() {
+
+    var s = '';
+    var seq, total, c=0;
+    var item_id, item, item_unit;
+
+    var cl_item_units = new CodeList(get_item_units_codes());
+
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+        total = hs.safe.parseFloat(get_sub_control("st", seq.toString()).val());
+        if (!isNaN(total)) {
+            item_id = get_item_id(get_sub_control("id", seq)); // ;
+            if (hs.isEmpty(item_id))
+                item_id = get_sub_control("id", seq).val();
+            item_unit = cl_item_units.getTitle(get_sub_control("un", seq).val());
+            item = get_item_by_id(item_id);
+
+            if (item != null)
+                s += '<tr class="r-' + (c++)%2 + '" ><td>' + item.item_name + '</td><td>'+ item_unit +'</td><td>'+get_sub_control("up", seq).val()+'</td><td>' + get_sub_control("uc", seq).val() +'</td><td>' + get_sub_control("st", seq).val() + '</td></tr><tr>';
+        };
+    };
+
+    return s;
+
+}
+
+
+function pos_offline_print_items() {
+    var s = '';
+    var seq, total, c = 0;
+    var item_id, item, item_unit, item_name;
+    var cl_item_units = new CodeList(get_item_units_codes());
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+        total = hs.safe.parseFloat(get_sub_control("st", seq.toString()).val());
+        if (!isNaN(total)) {
+            item_id = get_item_id(get_sub_control("id", seq)); 
+            if (hs.isEmpty(item_id))
+                item_id = get_sub_control("id", seq).val();
+            if (hs.isEmpty(item_id))
+                continue;
+            item_unit = line_unit(seq);
+            item = get_item_by_id(item_id);
+            if (item != null) {
+
+                var t = "<td>" + hs.link("-", "js:on_pos_add_items('{0}','{1}','{2}',{3},{4})".f(seq, item_id, item_unit, line_price(seq), -1), "minus") + "</td>"
+                var qty = hs.link(line_qty(seq), "js:on_pos_add_items('{0}','{1}','{2}',{3},{4})".f(seq, item_id, item_unit, line_price(seq), 1), "b");
+
+              //  item_name = item.item_name + (is_multi_units(item) ? " / " + cl_item_units.getTitle(item_unit) : "");
+                item_name = item.item_name +  " / " + cl_item_units.getTitle(item_unit);
+                item_name = hs.link(item_name, "js:show_pos_item_desc(" + seq + ")");
+                s += '<tr class="r-' + (c++) % 2 + '" ><td>' + item_name + '</td><td>' + line_price(seq) + '</td><td><b>' + qty + '</b></td><td>' + line_subtotal(seq) + '</td>' + t + '</tr><tr>';
+            } else
+                hs.msg.toast("item not found, or has no qty:" + item_id);
+        };
+    };
+
+    return s;
+
+}
+
+// --------------------------
+function render_virtual_keypad() {
+    return `<div id='vk' onblur='vk_show(null)'>
+            <span class="vk icon icon_next" onclick ="vk_input(this)">D</span >
+            <span class="vk" onclick="vk_input(this)">1</span>
+            <span class="vk" onclick="vk_input(this)">2</span>
+            <span class="vk" onclick="vk_input(this)">3</span>
+            <br />
+            <span class="vk" onclick="vk_input(this)">C</span>
+            <span class="vk" onclick="vk_input(this)">4</span>
+            <span class="vk" onclick="vk_input(this)">5</span>
+            <span class="vk" onclick="vk_input(this)">6</span>
+            <br />
+            <span class="vk" onclick="vk_input(this)">%</span>
+            <span class="vk" onclick="vk_input(this)">7</span>
+            <span class="vk" onclick="vk_input(this)">8</span>
+            <span class="vk" onclick="vk_input(this)">9</span>
+            <br />
+            <span class="vk" onclick="vk_input(this)">*</span>
+            <span class="vk" onclick="vk_input(this)">-</span>
+            <span class="vk" onclick="vk_input(this)">0</span>
+            <span class="vk" onclick="vk_input(this)">.</span>
+        </div>`;
+}
+
+function pos_show_items() {
+    //basket_show();
+    //return;
+
+    if (hs.fm.getId() == "hc-lab")
+        return; 
+
+    var s = '';
+
+    if (!hs.fm.isMobile)
+        s += render_virtual_keypad();
+
+
+    s += '<table class="rep_tab child-items-list pos"><tr class="head"><td style="min-width:100px;">الصنف</td><td>السعر</td><td>عدد</td><td colspan=2>إجمالي</td></tr>';
+    s += pos_offline_print_items();
+    // s += '<tr class="head"><td colspan=4>الإجمالي&nbsp;&nbsp;:&nbsp;&nbsp;<span id="inv_total">' + hs.fm.val("price") + '</span></td></tr>';
+
+    var price = hs.safe.parseFloat(hs.fm.val("price"));
+
+   
+    s += '<tr class="head"><td>الإجمالي</td><td colspan=4><span id="inv_total">' + hs.fmtNumber(price,!0) + '</span></td></tr>';
+
+    
+
+    var tax_amount = hs.safe.parseFloat(hs.fm.val("tax_amount"));
+    if (tax_amount != 0)
+        s += '<tr class="head"><td>الضريبة</td><td class="hl-text" colspan=4>' + hs.fmtNumber(tax_amount,!0) + '</td></tr>';
+
+    var doc_charges = hs.safe.parseFloat(hs.fm.val("doc_charges"));
+    if (doc_charges != 0)
+        s += '<tr class="head"><td>الأعباء</td><td class="hl-text" colspan=4>' + hs.fmtNumber(doc_charges,!0) + '</td></tr>';
+
+    var discount = hs.safe.parseFloat(hs.fm.val("discount"));
+    if (discount != 0)
+        s += '<tr class="head"><td>التخفيض</td><td class="hl-text" colspan=4>' + hs.fmtNumber(discount,!0) + '</td></tr>';
+
+    var net_amount = hs.safe.parseFloat(hs.fm.val("net_amount"));
+    if (net_amount != 0 && ((doc_charges + discount + tax_amount) != 0))
+        s += '<tr class="head"><td>المطلوب</td><td class="hl-text" colspan=4>' + hs.fmtNumber(net_amount,!0) + '</td></tr>';
+
+
+    s += '</table>'; // </td></tr>
+
+    if (hs.e.exists("hos-itm-lst"))
+        $("#hos-itm-lst").html(s);
+    else
+        hs.msg.callout(s, null,0,null, 400,10,"co-pos-items");
+    
+}
+
+
+function get_pos_print_hdr() {
+    var s = '';
+
+    s += '<!DOCTYPE html>';
+    s += '<html lang="en">';
+
+    s += '<head>';
+    
+   
+
+    s += '<link rel="stylesheet" type="text/css" href="http://localhost:2080/app/s/css/hs_app.css" />';
+    s += '<link href="http://localhost:2080/app/s/css/hs_app_ar.css" rel="stylesheet" type="text/css" />';
+   
+    s += '<style type="text/css">';
+    s += '* {font-size: 7pt;font-family: Tahoma;color: #333;} body {width: 7cm !important; overflow:scroll;} page-content {margin: 0 !important; padding: 0 !important;}';
+    s += 'body { vertical-align: middle; border-collapse:collapse; background: url(none) repeat  #fff;margin: auto; font-family: Tahoma; height: 100%; } ';
+    s += 'div.full-screen-box { position:relative; top:0; bottom:0;   margin: auto; width: auto !important; } ';
+    s += '#page {position:relative; width:100%; height:auto;  overflow:visible;  margin: auto; } ';
+    s += '</style>';
+
+    s += '<title>pos-offline-print</title>';
+    s += '</head>';
+    s += '<body>';
+
+    //  s += 'This is a test...';
+
+    s += '<center class="no-print"><br/><a id="but-print" style="width: 200px;" class="no-print icon_print link_icon ui-hilight" href="javascript:window.print();">طباعة</a><br/></center>';
+
+    s += '<div class="full-screen-box"><div id="page"><div class="page-content">';
+
+    // client info
+    s += '<table class="doc-header"><tr><td>الدولة<br/>المدينة</td><td class="doc-logo"><img class="logo " src="http://localhost:2080/store/1077_sys-cfg_hs-sys-clt_logo84.jpg" alt="الشعار" />hello...</td><td>Country<br/>City</td></tr></table>';
+    s += '<div class="doc-title">مبيعات عبر نقاط البيع</div>';
+    s += '<div class="doc-content"><table class="easyform">';
+    s += '<tr id="r_sale_doc_no" class="fld"><td class="tit">رقم المستند</td><td class="val">' + hs.fm.val("doc_no") + '</td></tr>';
+    s += '<tr id="r_cust_name" class="fld"><td class="tit">العميل</td><td class="val">' + $("#cov_name").val() + '</td></tr>';
+    
+
+    // items
+    s += '<tr id="r_items" class="fld"><td colspan=2 class="val">';
+
+    s += '<table class="rep_tab child-items-list pos"><tr class="head"><td>الصنف</td><td>الوحدة</td><td>السعر</td><td>الكمية</td><td>الإجمالي</td></tr>';
+    s += pos_offline_print_items();
+    s += '<tr class="head"><td></td><td colspan=3>الإجمالي&nbsp;&nbsp;:&nbsp;&nbsp;<span id="inv_total">' + hs.fm.val("price") + '</span></td><td></td></tr></table></td></tr>';
+
+    // amount details
+    // s+='';
+
+    s += '<tr class="fld"><td colspan=2 class="val">' + hs.fm.val("doc_note") + '</td></tr>'
+
+    s += '</table></div>'; // form
+
+    s += '</div></div></div>';
+        
+
+    // auto print dlg 
+    
+   
+     s += '<script> window.print(); <\/script>';
+
+    s += '</body></html>';
+
+    // window.alert(s);
+
+    return s;
+};
+
+
+function offline_print_pos() {
+    var s = "";
+
+    s = get_pos_print_hdr();
+
+    s = hs.ui.fmtFrameDataUrl(s);
+
+    s = "<iframe frameborder='0' scrolling='auto' marginwidth='0' style='width:100%; height:100%;' src='" + s + "' />";
+
+    hs.ui.showContentDlg('', s);
+
+}
+
+
+function filter_grid_items(e) {
+
+    var filter = $(e).val();
+     
+    $("a.tit > span").each(function () {
+        if (hs.isEmpty(filter) || $(this).text().contains(filter))
+            $(this).parents("div.doc-inline-item").show();
+        else
+            $(this).parents("div.doc-inline-item").hide();
+    });
+
+    
+}
+
+
+function filter_grid() {
+    window.setTimeout(function () {
+        filter_grid_items($("#g-f"));
+    }, 500);
+}
+
+
+function goto_first_vacant_line() {
+    var seq;
+    for (seq = 0; seq < es_doc_line_count; seq++) {
+        var item_id = line_item_id(seq); 
+        if (hs.isEmpty(item_id)) {
+            get_sub_control("id", seq.toString()).focus();
+            break;
+        };
+       
+    };
+}
+
+
+
+function config_es_doc_hotkeys() {
+
+    hs.R.press_ctrl_help_extra = '';
+    hs.R.press_ctrl_help_extra += kv('F4', 'الصنف التالي');
+    hs.R.press_ctrl_help_extra += kv('F6','العميل/المورد/الحساب');
+    // hs.R.press_ctrl_help_extra += ' | F8 : المبلغ الدفوع';
+  
+   
+
+    $(document).keydown(function (e) {
+        // e.ctrlKey &&
+       
+
+        if (e.which === K.F6) { // F6
+            $("#cov_name").focus().click();
+            hs.absorb(e);
+            return;
+        };
+
+        if (e.which === K.F8) { //  F8 = Pay
+            $("#paid").focus().select();
+            hs.absorb(e);
+            return;
+        };
+
+        if (e.which === K.F4) { 
+            goto_first_vacant_line();
+            hs.absorb(e);
+            return;
+        };
+
+       
+
+        
+    });
+}
+
+var es_custs_pct = null;
+
+function get_cust_discount_pct(cust_id) {
+    if (!use_sale_price)
+        return 0;
+
+    if (es_custs_pct == null)
+        es_custs_pct = hs.cache.getItem("es_custs_pct");
+
+    var cl_cust_disc_pct = new CodeList(es_custs_pct);
+
+    var pct = cl_cust_disc_pct.getTitle(cust_id);
+    if (pct == null)
+        return 0;
+
+    return hs.safe.parseFloat(pct);
+
+
+}
+
+function hc_get_cust_company(cust_id) {
+
+    if (!use_sale_price)
+        return 0;
+
+    if (es_custs_pct == null)
+        es_custs_pct = hs.cache.getItem("es_custs_pct");
+
+    var cl_cust_disc_pct = new CodeList(es_custs_pct);
+
+    return cl_cust_disc_pct.getParent(cust_id);
+}
+
+function on_pricing_policy_changed() {
+
+    var pricing_policy = $("#pricing").val();
+    var e = $("#discount");
+
+    if (pricing_policy == "P0") {
+        $(e).val("0");
+        hs.e.disable(e);
+    };
+
+    if (pricing_policy == "P1" || hs.isEmpty(pricing_policy)) 
+      hs.e.enable(e);
+        
+    if (pricing_policy == "P3")  // cust disc
+      hs.e.disable(e);
+      
+    if (pd.line_disc)
+        es_doc_recalc()
+    else
+        on_item_price_changed(get_sub_control("up", 0));
+
+    
+}
+
+
+
+function on_cust_changed(el, move_to_next) {
+    var cov_no = $("#cov_no").val();
+    
+    var pricing_policy = $("#pricing").val();
+    if (pricing_policy == "P3" || pricing_policy == "P4" || pricing_policy=="P2") // apply cust discount
+        on_item_price_changed(get_sub_control("up", 0));
+
+    if (move_to_next)
+        focus_next(el);
+
+    if (pd.hasOption(0x1000)) { // auto_cov_bal_show
+        if (hs.isEmpty(cov_no))
+            hs.msg.removeAll();
+        else
+            show_acc_bal(cov_no, $("#cov_name"));
+    };
+}
+
+
+
+function show_acc_bal(acc_no, e) {
+
+    if (e != null) {
+        e = h$(e);
+
+        if (acc_no == null)
+            acc_no = h$(e).val();
+    }
+
+    if (hs.isEmpty(acc_no)) {
+        hs.msg.removeAll();
+        return;
+    }
+
+    var url = "/app/fms/?fm=fi-accs&cmd=show-acc-bal&ajax=y&id=" + acc_no;
+
+    hs.msg.toast("loading acc bal: " + acc_no, 1);
+
+    do_ajax(url, null, function (result, rc) { if (rc==0) hs.msg.callout(result,e, 0, null, 300); }, e);
+}
+
+function get_acc_bal(e, acc_no, acc_crncy, callback ) {
+
+    var url = "/app/fms/?fm=fi-accs&cmd=get-acc-bal&ajax=y&id=" + acc_no + "&crncy=" + acc_crncy ;
+
+    hs.msg.toast("loading acc bal: " + acc_no, 1);
+
+    do_ajax(url, null, callback, e);
+}
+
+function get_doc_type() {
+    return $("#_doc_type").val();
+}
+
+// ******** Fin Doc ******* //
+
+
+
+function fi_line_fld_id(fld_key, seq) {
+    seq = adjustLineSeq(seq);
+
+    return "#" + seq + "_" + FI_LINES_FLD + "_" + fld_key;
+}
+
+function fi_line_fld(fld_key, seq) {
+    seq = adjustLineSeq(seq);
+
+    return cfg_keys($("#" + seq + "_" + FI_LINES_FLD + "_" + fld_key));
+}
+
+function get_fi_doc_amount_cc() {
+    var amnt = hs.safe.parseFloat($("#amount").val());
+    var crncy = $('#doc_crncy').val();
+    return convert_amount_to_cc(amnt, crncy);
+}
+
+function on_acc_list_changed(theList, move_to_next_item) {
+
+    var cov_no = get_item_id(theList);
+
+    hs.msg.toast("acc_no:" + cov_no)
+
+    if (!hs.isEmpty(h$(theList).val()))
+        hs.msg.removeAll(); // for POS and offline mode
+
+    // if readonly no need to do anything
+    if (hs.e.isReadonly(theList))
+        return;
+
+    /* // init line crncy with acc crncy
+    var acc_crncy = FiAcc.getAccCrncy(get_item_id(theList));
+    var seq = getLineSeq(theList);
+
+    $(fi_line_fld("cy", seq)).val(acc_crncy);
+    */
+
+    if (move_to_next_item)
+        focus_next(theList);
+
+    /*
+    if (pd.hasOption(0x1000)) { // auto_cov_bal_show
+       
+
+        if (hs.isEmpty(cov_no))
+            hs.msg.removeAll();
+        else
+            show_acc_bal(cov_no, null);
+    };
+    */
+}
+
+function on_acc_list_open(e, theExList) {
+   
+   
+    if (hs.e.isReadonly(e))
+        return;
+
+    var seq = getLineSeq(e);
+    /*
+    var at = $(fi_line_fld("at", seq)).val();
+    
+    theExList.options.codelist = FiAcc.getAnals(at);
+    */
+
+
+    var at_fld_id = fi_line_fld_id("at", seq);
+
+    fi_acc_pick_list_open(e, theExList, at_fld_id);
+   
+   
+}
+
+
+function fi_doc_hide_col(col) {
+    $('#t-lines td:nth-child(' + col + '), #t-lines th:nth-child( ' + col + ')').hide();
+}
+
+
+function fi_doc_init(lines_count, fld_name) {
+    // hs.msg.toast("init fi doc..");
+
+    var is_fin_doc = fld_name != "charges";
+
+    var isMobile = hs.fm.isMobile;
+
+    hs.page.noFooter();
+
+    var doc_type = get_doc_type();
+
+    fi_cl_sub_accs = FiAcc.getSubs();
+
+    fi_doc_line_count = lines_count;
+    FI_LINES_FLD = fld_name;
+
+    
+
+   
+
+    if (is_fin_doc) {
+        $("#amount, #doc_crncy, #doc_crncy_exrate").on("change", function () { fi_recalc_all_lines(!1); });
+
+        var t = "";
+
+        if (hs.fm.isEntry()) {
+            t += hs.link("جلب الحسابات من قائمة الإختيار", "js:show_lines_multi_pick('fi-accs&init-values=y&i-acc_hier_cat=2','lines','ac',true)", "icon-checklist");
+            t += hs.link("جلب القيود من مستند آخر", "js:copyItems(1)", "icon_down");
+            t += hs.link("نسخ القيود من ملف اكسل", "js:fi_pasteItems()", "icon-excel");
+            
+            t += hs.link("إعادة حساب المبالغ", "js:fi_recalc_all_lines(false)");
+            t += hs.link("إعادة حساب المبالغ بتطبيق النسب", "js:fi_line_reapply_pct_all()");
+
+
+            if (hs.fm.getId() == "fi-gl-entry")
+                t += hs.link("عكس الدائن و المدين", "js:fi_line_reverse_all()");
+
+            t += "<b class='title'>عدد السطور</b>";
+            t += hs.link("+20", "js:DoSubmit('refresh','20')", "icon_list");
+            t += hs.link("+50", "js:DoSubmit('refresh','50')", "icon_list");
+            t += hs.link("+100", "js:DoSubmit('refresh','100')", "icon_list");
+            t += hs.link("+200", "js:DoSubmit('refresh','200')", "icon_list");
+        };
+
+        hs.page.addTools(t);
+    };
+
+    var cl_acc_types = new CodeList(get_acc_types());
+
+    var cl_acc = new CodeList(fi_cl_sub_accs);
+    var cl_crncy = hs.cr.codelist();
+
+    act("fi_doc_init");
+
+    setupAccTools("cash_acc_no");
+    
+
+    var i;
+    for (i = 0; i < lines_count; i++) {
+        var seq = i.toString();
+
+        var at_fld = fi_line_fld("at", seq).addClass("no-exfind");
+        cl_acc_types.fillSelectList($(at_fld), 1);
+
+        var ac_fld = fi_line_fld("ac", seq);
+
+       
+            $(ac_fld).exList({
+                codelist: fi_cl_sub_accs,
+                select_only: true,
+             //   auto_open_on_focus: true,
+                on_item_changed: on_acc_list_changed,
+                on_focus: on_acc_list_open
+            }).minLen(1); 
+       
+
+        // hs.fm.addFieldTools(item_ctl_id, "es-item", null, true, extra_tools);
+
+        hs.e.cfg(ac_fld, "fm", "fi-accs");
+        //   hs.e.data(ac_fld,"def_at", "0");
+
+        var sg_fld = fi_line_fld("sg", seq);
+
+        $(sg_fld).exList({
+            codelist: fi_cl_sub_accs,
+            select_only: true,
+            // on_item_changed: on_acc_list_changed,
+            on_focus: fi_acc_pick_list_open
+        }).minLen(1);
+
+        hs.e.cfg(sg_fld, "fm", "fi-accs");
+        hs.e.data(sg_fld, "def_at", "R")
+
+        //hs.fm.addFieldTools(hs.e.getId(), "fi-accs", null, true, extra_tools)
+
+
+        var cy_fld = $(fi_line_fld("cy", seq)).attr("onchange", "on_fi_line_crncy_changed(this)").minLen(1).addClass("no-exfind");
+        cl_crncy.fillSelectList(cy_fld, 1);
+
+        var is_cc = cy_fld.val() == es.CC;
+        var fld;
+
+        fld = $(fi_line_fld("xr", seq)).attr("onchange", "on_fi_line_xr_changed(this)")
+            .addClass("lft")
+            .keydown(function (ev) { line_keydown(this, ev);})
+        ;
+
+        var t = '';
+        t += hs.link("حساب سعر التحويل", "js:calc_line_exrate('" + seq + "')");
+        t += hs.link("حساب المبلغ الأجنبي", "js:calc_line_acc_amnt('" + seq + "')");
+        hs.e.setupTools(fld, 300, t);
+
+
+
+        if (is_cc) hs.e.disable(fld);
+
+        $(fi_line_fld("da", seq)).attr("onchange", "fi_recalc_line(this)");
+        $(fi_line_fld("ca", seq)).attr("onchange", "fi_recalc_line(this)");
+
+        fld = $(fi_line_fld("dl", seq)).on("change dblclick", function () { fi_line_amnt_cc_changed(this, 'da') });
+        fld.keydown(function (ev) { line_keydown(this, ev); }).attr("ondblclick", "$(this).toggleClass('ui-fix')");
+        if (is_cc) hs.e.disable(fld);
+
+        fld = $(fi_line_fld("cl", seq)).on("change dblclick", function () { fi_line_amnt_cc_changed(this, 'ca') });
+        fld.keydown(function (ev) { line_keydown(this, ev); }).attr("ondblclick", "$(this).toggleClass('ui-fix')");
+        if (is_cc) hs.e.disable(fld);
+                
+             
+        $(fi_line_fld("pc", seq)).attr("autocomplete", "off").addClass("lft").on("change dblclick", function () { fi_line_apply_pct(this) });
+
+
+        if (doc_type == '101' || doc_type == '112' || doc_type == '116' || doc_type=='121') // cash rcpt
+            $(fi_line_fld("ca", seq)).minLen(1);
+
+        if (doc_type == '102' || doc_type == '114' || doc_type == '115' || doc_type=='122') // pay vouch
+            $(fi_line_fld("da", seq)).minLen(1);
+
+        
+       
+        
+        fi_line_fld("br", seq).addClass("no-exfind");
+        fi_line_fld("cc", seq).addClass("no-exfind");
+        fi_line_fld("pj", seq).addClass("no-exfind");
+        fi_line_fld("ct", seq).addClass("no-exfind");
+
+     // fi_line_fld("me", seq);
+        
+    };
+
+    act("fi render lines");
+    
+    fi_recalc_all_lines(!1);
+    act("fi_recalc_lines");
+   
+}
+
+function line_keydown(e, ev) {
+    if (ev.which === K.F3) {
+        calc_line_exrate(getLineSeq(e));
+        hs.absorb(ev);
+    }
+    
+    if (ev.which === K.F4) {
+        calc_line_acc_amnt(getLineSeq(e));
+        hs.absorb(ev);
+    }
+    
+}
+
+
+function calc_line_exrate(seq) {
+
+    var crncy = $(fi_line_fld("cy", seq)).val();
+
+    if (crncy == es.CC)
+        return;
+       
+    
+    var ac_amnt = hs.safe.parseFloat($(fi_line_fld("da", seq)).val());
+    var cc_amnt = hs.safe.parseFloat($(fi_line_fld("dl", seq)).val());
+
+    if (cc_amnt == 0) {
+        cc_amnt = hs.safe.parseFloat($(fi_line_fld("cl", seq)).val());
+        ac_amnt = hs.safe.parseFloat($(fi_line_fld("ca", seq)).val());
+    }
+
+    if (cc_amnt == 0 || ac_amnt == 0) {
+        hs.msg.tip($(e), "يجب إدخال كل من المبلغ و المقابل المحلي");
+        return;
+    }
+
+    var xr_fld = fi_line_fld("xr", seq);
+    
+    $(xr_fld).val(hs.fmtRate(cc_amnt / ac_amnt));
+
+    hs.msg.updated(xr_fld);
+
+    on_fi_line_xr_changed(xr_fld);
+
+}
+
+function calc_line_acc_amnt(seq) {
+    
+
+    var crncy = $(fi_line_fld("cy", seq)).val();
+       
+    var xr_fld = fi_line_fld("xr", seq);
+
+    var ex_rate = hs.safe.parseFloat($(xr_fld).val());
+    if (ex_rate == 0) {
+        hs.msg.required(xr_fld);
+        return;
+    }
+   
+    var ac_amnt_fld = fi_line_fld("da", seq);
+    var cc_amnt = hs.safe.parseFloat($(fi_line_fld("dl", seq)).val());
+
+    if (cc_amnt == 0) {
+        cc_amnt = hs.safe.parseFloat($(fi_line_fld("cl", seq)).val());
+        ac_amnt_fld = fi_line_fld("ca", seq);
+    }
+
+    if (cc_amnt == 0) {
+        hs.msg.tip($(e), "يجب إدخال المقابل المحلي");
+        return;
+    }
+
+
+
+
+    if (crncy == es.CC)
+        $(ac_amnt_fld).val(hs.fmtAmount(cc_amnt));
+    else
+       $(ac_amnt_fld).val(hs.fmtAmount(cc_amnt / ex_rate));
+        
+    hs.msg.updated(ac_amnt_fld);
+
+    fi_recalc_line(xr_fld);
+
+
+
+
+}
+
+
+function fi_line_amnt_cc_changed(e, ac_amnt_fld_id) {
+
+    fi_recalc_all_lines(true)
+
+
+
+}
+
+
+function on_fi_line_xr_changed(e) {
+
+    if (hs.isEmpty(h$(e).val()))
+        return;
+
+    fi_recalc_line(e);
+
+}
+
+
+function on_fi_line_crncy_changed(e) {
+    var seq = getLineSeq(e);
+    var crncy = h$(e).val();
+    var doc_crncy = get_doc_crncy();
+    var xr_val = get_exchange_rate(crncy);
+    var xr_fld = fi_line_fld("xr", seq);
+
+    xr_fld.val(xr_val);
+   
+    var ena_xr = crncy != es.CC && crncy != doc_crncy;
+     if (ena_xr && !hs.e.exists(xr_fld)) 
+            ena_xr = false; 
+
+    hs.e.enable(xr_fld, ena_xr); 
+    hs.e.enable(fi_line_fld("cl", seq), ena_xr);
+    hs.e.enable(fi_line_fld("dl", seq), ena_xr);
+    
+    fi_recalc_line(e);
+
+}
+
+
+function fi_line_reverse_all() {
+
+    for (var seq = 0; seq < fi_doc_line_count; seq++) {
+        var e = fi_line_fld("dl", seq);
+
+        var dl_val = hs.safe.parseFloat($(fi_line_fld("dl", seq)).val());
+        var cl_val = hs.safe.parseFloat($(fi_line_fld("cl", seq)).val());
+
+        if (cl_val == 0 && dl_val == 0)
+            continue;
+        
+        var da_val = hs.safe.parseFloat($(fi_line_fld("da", seq)).val());
+        var ca_val = hs.safe.parseFloat($(fi_line_fld("ca", seq)).val());
+        
+        
+        if (dl_val != 0) {
+            $(fi_line_fld("cl", seq)).val(hs.fmtAmount(dl_val));
+            $(fi_line_fld("ca", seq)).val(hs.fmtAmount(da_val));
+
+            $(fi_line_fld("dl", seq)).val('');
+            $(fi_line_fld("da", seq)).val('');
+        }
+        else
+        if (cl_val != 0) {
+
+            $(fi_line_fld("dl", seq)).val(hs.fmtAmount(cl_val));
+            $(fi_line_fld("da", seq)).val(hs.fmtAmount(ca_val));
+
+            $(fi_line_fld("cl", seq)).val('');
+            $(fi_line_fld("ca", seq)).val('');
+        };
+    };
+
+    fi_recalc_all_lines(false);
+}
+
+
+function fi_line_reapply_pct_all() {
+    for (var seq = 0; seq < fi_doc_line_count; seq++) {
+        fi_line_apply_pct(fi_line_fld("pc", seq));
+    };
+}
+
+function fi_line_apply_pct(e) {
+    var seq = getLineSeq(e);
+    var pct_val = hs.safe.parseFloat(fi_line_fld("pc", seq).val());
+
+    if (pct_val == 0)
+        return;
+
+    var neg_pct = false;
+
+    if (pct_val < 0) {
+        neg_pct = true;
+        pct_val = -pct_val;
+        fi_line_fld("pc", seq).val(pct_val.toString());
+    };
+
+    var doc_amount = hs.safe.parseFloat($("#amount").val());
+
+    if (doc_amount <= 0)
+        return;
+
+    var xr_fld = fi_line_fld("xr", seq);
+    var xr_val = hs.safe.parseFloat($(xr_fld).val());
+
+    if (xr_val == 0) {
+        fi_line_fld("cy", seq).val(es.CC);
+        xr_fld.val("1");
+        xr_val = 1;
+    };
+
+    var dl_val = hs.safe.parseFloat($(fi_line_fld("dl", seq)).val());
+    var cl_val = hs.safe.parseFloat($(fi_line_fld("cl", seq)).val());
+    
+    if (cl_val == 0 && dl_val == 0) {
+        if (neg_pct)
+            dl_val = 1;
+        else
+            cl_val = 1;
+    }
+
+
+    if (cl_val == 0 && dl_val == 0)
+        dl_val = cl_val = 1; // to fill both dl and cl with amnt%
+
+
+    if (dl_val != 0) {
+        dl_val = doc_amount * pct_val / 100;
+        $(fi_line_fld("dl", seq)).val(hs.fmtAmount(dl_val));
+        $(fi_line_fld("da", seq)).val(hs.fmtAmount(dl_val / xr_val));
+    };
+
+    if (cl_val != 0) {
+        cl_val = doc_amount * pct_val / 100;
+        $(fi_line_fld("cl", seq)).val(hs.fmtAmount(cl_val));
+        $(fi_line_fld("ca", seq)).val(hs.fmtAmount(cl_val / xr_val));
+    }
+       
+
+    fi_recalc_line(e, !1);
+    
+};
+
+
+function fi_recalc_line(e, calc_pc) {
+
+    if (arguments.length < 2)
+        calc_pc = true;
+
+    // if (calc_pc && get_doc_crncy() != es.CC) calc_pc = false;
+
+    var seq = getLineSeq(e);
+    var crncy = $(fi_line_fld("cy", seq)).val();
+    var ex_rate = hs.safe.parseFloat($(fi_line_fld("xr", seq)).val());
+
+    if (ex_rate == 0)
+        ex_rate = get_exchange_rate(crncy);
+
+    var cl_fld = fi_line_fld("cl", seq);
+    var dl_fld = fi_line_fld("dl", seq);
+
+    if (!$(cl_fld).hasClass('ui-fix')) {
+        var cl_val = hs.safe.parseFloat($(fi_line_fld("ca", seq)).val()) * ex_rate;
+        $(cl_fld).val(hs.fmtAmount(cl_val, !0));
+    };
+
+    if (!$(dl_fld).hasClass('ui-fix')) {
+        var dl_val = hs.safe.parseFloat($(fi_line_fld("da", seq)).val()) * ex_rate;
+        $(dl_fld).val(hs.fmtAmount(dl_val, !0));
+    };
+  
+
+    fi_recalc_all_lines(calc_pc);
+
+}
+
+function fi_recalc_all_lines(calc_pc) {
+
+    if (!hs.e.exists("tot_debit")) 
+        return;
+   
+    var doc_amnt_cc = get_fi_doc_amount_cc();
+    
+    var doc_type = get_doc_type();
+    var seq, debit, credit, pct;
+    var tot_debit = 0, tot_credit = 0, tot_diff=0;
+    for (seq = 0; seq < fi_doc_line_count; seq++) {
+
+        debit = hs.safe.parseFloat($(fi_line_fld("dl", seq)).val());
+        credit = hs.safe.parseFloat($(fi_line_fld("cl", seq)).val());
+
+        tot_debit += debit;
+        tot_credit += credit;
+
+        if (calc_pc && doc_amnt_cc != 0) {
+            pct = ((debit + credit) / doc_amnt_cc) * 100;
+            $(fi_line_fld("pc", seq)).val(hs.fmtAmount(pct,!0));
+        };
+    };
+
+    if (doc_type == '101' || doc_type == '112' || doc_type == '116' || doc_type=='121') // cash rcpt
+        tot_debit = get_fi_doc_amount_cc();
+
+    if (doc_type == '102' || doc_type == '114' || doc_type == '115' || doc_type=='122') // pay vouch
+        tot_credit = get_fi_doc_amount_cc();
+    
+    tot_diff = tot_credit - tot_debit;
+
+    $("#tot_debit").val(hs.fmtAmount(tot_debit));
+    $("#tot_credit").val(hs.fmtAmount(tot_credit));
+    $("#tot_diff").val(hs.fmtAmount(Math.abs(tot_diff)));
+
+}
+
+
+
+
+
+function fi_acc_pick_list_open(e, theExList, at_id) {
+    if (hs.e.isReadonly(e))
+        return;
+
+    if (arguments.length < 2)
+        theExList = null;
+
+    if (arguments.length < 3)
+        at_id = "at_" + h$(e).attr("id");
+        
+    if (!hs.e.exists(at_id))
+        at_id = at_id.replace("_to_", "");
+    
+
+    // var at_val = h$(at_id).val();
+    var at_val = hs.fm.val(at_id);
+
+    if (hs.isEmpty(at_val)) {
+        at_val = hs.e.data(e, "def_at");
+        if (!hs.isEmpty(at_val))
+            hs.fm.val(at_id, at_val);
+        else
+            at_val = '';
+    };
+
+    if (theExList != null)
+        theExList.options.codelist = FiAcc.getAnals(at_val);
+    else {
+        hs.list.fill(e, FiAcc.getAnals(at_val), 1);
+    }
+}
+
+function fi_acc_pick_list(fld_name) {
+
+   
+
+    if (fi_cl_sub_accs == null)
+        fi_cl_sub_accs = FiAcc.getSubs();
+      
+
+   // var cl_acc = new CodeList(fi_cl_sub_accs);
+
+    var ac_fld = h$(fld_name);
+    var at_fld = $("#at_" + fld_name);
+
+    if (at_fld.length == 0 && !hs.isEmpty(fld_name))
+        at_fld = $("#at_" + fld_name.replace("_to_",""));
+    
+    if (hs.e.isReadonly(ac_fld))
+        hs.e.disable(at_fld);
+
+  
+        $(ac_fld).exList({
+            codelist: fi_cl_sub_accs,
+            select_only: true,
+          //  auto_open_on_focus: true,
+            on_item_changed: on_acc_list_changed,
+            on_focus: fi_acc_pick_list_open
+
+        }); 
+   
+
+    if (at_fld.length == 0) {
+        var t = hs.link("Another Account..", "/app/fms/?fm=fi-accs&fm-mode=&cmd=find&cmd-mode=select&select-target=" + fld_name, "icon_find", 'D');
+        hs.e.setupTools(fld_name, 200, t);
+    }
+
+    
+
+}
+
+// **** End: Fin Doc ****** //
+
+
+
+
+booking = {
+
+    getDays: function () {
+        var $fd = h$("from_date");
+
+        if (!hs.e.hasValue($fd)) {
+            hs.msg.required($fd);
+            return 1;
+        };
+
+        var dt1 = hs.e.parseDate($fd);
+        var dt2 = hs.e.parseDate("to_date"); 
+
+        if (dt1 == null || dt2 == null) 
+            return 1;
+        
+
+        
+       
+        var days = Math.floor((Date.UTC(dt2.getFullYear(), dt2.getMonth(), dt2.getDate()) - Date.UTC(dt1.getFullYear(), dt1.getMonth(), dt1.getDate())) / (1000 * 60 * 60 * 24));
+
+        if (isNaN(days) || days < 1)
+            days = 1;
+
+        return days;
+    },
+
+    checkItem: function (e) {
+        e = h$(e);
+        var seq = getLineSeq(e);
+        var item_id = line_item_id(seq);
+        var batch_no = $(get_sub_control("bn", seq)).val();
+        var units = hs.safe.parseInt(get_sub_control("uc", seq).val()) + hs.safe.parseInt(get_sub_control("fu", seq).val());
+        var url = "/app/fms/?fm=es-book-mon&cmd=show-item-book-cal&item_id={0}&batch_no={1}&from={2}&to={3}&qty={4}&store_id={5}".format(item_id, hs.isEmpty(batch_no) ? '': batch_no, hs.fm.val('from_date'), hs.fm.val('to_date'), units, hs.fm.val("store_id"));
+
+        ShowDlgF(url);
+    },
+
+    hideDimm: function (chk) {
+        $('.dimm').css('visibility', hs.e.isChecked(chk) ? 'hidden' : 'visible');
+    },
+
+    viewStatus: function () {
+
+        var url = "/app/fms/?fm=es-book-mon&fm-mode=item-book-check&cmd=find&sind=y&init-values=y&auto-run=y&i-bookdate={0}&i-bookdate_to_={1}".format(hs.fm.val('from_date'), hs.fm.val('to_date'));
+        ShowDlgF(url);
+    }
+
+}
+
+
+function pasteItems() {
+
+    if (!hs.fm.isEntry()) {
+        hs.msg.error(hs.R.not_allowed);
+        return;
+    };
+
+
+
+    var ex_ctrl = "<input value='Y' id='_chk_auto' name='_chk_auto' type='checkbox' /><label for='_chk_auto'>تعبئة الحقول الفارغة بالقيم التلقائية - سوف تؤشر باللون الأصفر</label>";
+
+    var help="يجب أن تتطابق الأعمدة في الترتيب والعدد، عمود الإجمالي غير مطلوب<br/>\
+    يجب نسخ رقم الصنف و رقم الوحدة، وليس اسم الصنف واسم الوحدة<br/>";
+
+     help += "لتصدير القالب للاكسل <a href='javascript:exportToExcel(\"t-items\")'>اضغط هنا</a>";
+
+    hs.inputBox.show(true,null,'لصق من اكسل', 'قم بلصق المحتوى الذي نسخته من الأكسل هنا:', ex_ctrl, null, '', help, function (t) {
+        
+        doItemPaste(t, hs.e.isChecked('_chk_auto'));
+    });
+
+};
+
+function doItemPaste(t, auto_complete) {
+
+ //   auto_complete = true;
+
+
+    try {
+        t = t.trim().replace(/'/gi, "");
+        if (hs.isEmpty(t)) {
+            hs.msg.error("النص فارغ");
+            return;
+        };
+
+        var lines = t.split('\n');
+
+        if (lines.length > es_doc_line_count) {
+            hs.msg.error("الحد الأعلى لعدد السطور: " + es_doc_line_count);
+            return;
+        };
+
+        es.ajax_calls = false;
+        var s = "";
+
+        for (var seq = 0; seq < lines.length; seq++) {
+            //var vals = lines[seq].replace('\t\t', '\t').split('\t');
+            var vals = lines[seq].split('\t');
+            s += "line:" + seq.toString() + "\r\n";
+            s += " vals=" + vals.toString() + "\r\n";
+
+            for (var c = 0; c < vals.length; c++) {
+                var key = pd.line_flds[c];
+                var id = get_sub_control_id(key, seq.toString());
+                var val = vals[c];
+
+                if (key == "un")
+                    val = adjustLineSeq(val); // left pad 0
+
+                if (c == 0) {
+                    $('#' + id).attr('data-sel_id', val).exList('select');
+                }
+                else {
+                    if (!auto_complete || !hs.isEmpty(val)) {
+                        hs.fm.val(id, val);
+                        $('#' + id).removeClass('ui-warn');
+                    }
+                    else
+                        $('#' + id).addClass('ui-warn');
+                };
+
+                if (c == vals.length - 1)
+                    $("#" + id).trigger('change');
+
+                s += id + "=" + val + " \t ";
+            };
+            s += "\r\n";
+        };
+    }
+    catch (ex) {
+        window.alert('ex:' + ex.toString());
+    };
+
+    
+    es.ajax_calls = true;
+}
+
+function fi_pasteItems() {
+
+    if (!hs.fm.isEntry()) {
+        hs.msg.error(hs.R.not_allowed);
+        return;
+    };
+
+
+
+    var ex_ctrl = "<input value='Y' id='_chk_auto' name='_chk_auto' type='checkbox' /><label for='_chk_auto'>تعبئة الحقول الفارغة بالقيم التلقائية - سوف تؤشر باللون الأصفر</label>";
+
+    var help = "يجب أن تتطابق الأعمدة في الترتيب والعدد، عمود الإجمالي غير مطلوب<br/>\
+    يجب نسخ رقم الصنف و رقم الوحدة، وليس اسم الصنف واسم الوحدة<br/>";
+
+    help += "لتصدير القالب للاكسل <a href='javascript:exportToExcel(\"t-lines\")'>اضغط هنا</a>";
+
+    hs.inputBox.show(true, null, 'لصق من اكسل', 'قم بلصق المحتوى الذي نسخته من الأكسل هنا:', ex_ctrl, null, '', help, function (t) {
+
+        fi_doItemPaste(t, hs.e.isChecked('_chk_auto'));
+    });
+
+};
+
+
+
+function fi_doItemPaste(t, auto_complete) {
+
+    //   auto_complete = true;
+
+
+    try {
+        t = t.trim().replace(/'/gi, "");
+        if (hs.isEmpty(t)) {
+            hs.msg.error("النص فارغ");
+            return;
+        };
+
+        var lines = t.split('\n');
+
+        if (lines.length > es_doc_line_count) {
+            hs.msg.error("الحد الأعلى لعدد السطور: " + es_doc_line_count);
+            return;
+        };
+
+        es.ajax_calls = false;
+        var s = "";
+
+        for (var seq = 0; seq < lines.length; seq++) {
+            //var vals = lines[seq].replace('\t\t', '\t').split('\t');
+            var vals = lines[seq].split('\t');
+            s += "line:" + seq.toString() + "\r\n";
+            s += " vals=" + vals.toString() + "\r\n";
+
+            for (var c = 0; c < vals.length; c++) {
+                var key = pd.fi_line_flds[c+1];
+                var id = fi_line_fld_id(key, seq.toString());
+                var val = vals[c];
+
+                if (key == "cy" && hs.isEmpty(val))
+                    val = "01";
+
+                if (key == "xr" && hs.isEmpty(val))
+                    val = "1";
+
+                if (c == -1 || c == -2) {
+                    $(id).attr('data-sel_id', val).exList('select');
+                }
+                else {
+                    if (!auto_complete || !hs.isEmpty(val)) {
+                        hs.fm.val(id, val);
+                        $(id).removeClass('ui-warn');
+                    }
+                    else
+                        $(id).addClass('ui-warn');
+                };
+                                
+
+                if(key == "cy")
+                    $(id).trigger('change');
+
+                s += id.substring(1) + "=" + val + " \t ";
+            };
+            s += "\r\n";
+        };
+    }
+    catch (ex) {
+        window.alert('ex:' + ex.toString());
+    };
+
+
+    es.ajax_calls = true;
+}
+
+
+
+function copyItems(item_type) {
+
+    if (!hs.fm.isEntry()) {
+        hs.msg.error(hs.R.not_allowed);
+        return;
+    };
+
+    var fm_mode = item_type == 0 ? "mm-docs" : null;
+
+    hs.fm.selectDlg("es-biz-doc",fm_mode, "src_doc", function (e, v, t) {
+         DoSubmit('refresh', v);
+    });
+
+    return;
+}
+
+
+
+function es_doc_action(act) {
+    if (act == 'reset-prices') {
+        es_doc_reset_prices();
+        return;
+    }
+
+}
+
+
+
+function is_selected_line(seq) {
+    seq = adjustLineSeq(seq);
+    return $("#l" + seq).hasClass("hs-selected");
+}
+
+function reverse_lines_mark() {
+
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        if (!hs.isEmpty(line_item_id(seq)))
+            $("#l" + adjustLineSeq(seq)).toggleClass("hs-selected");
+    };
+
+    
+}
+
+function reset_zero_qty_lines() {
+
+
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        
+        if (line_total_qty(seq) == 0) {
+            var item_ctl = get_sub_control("id", seq);
+            $(item_ctl).attr("data-sel_id", null).attr("placeholder", null);
+            
+            reset_item_line(seq, line_item_id(seq), line_unit(seq));
+         
+        }
+    };
+
+    on_item_price_changed(get_sub_control("up", 0));
+
+
+    GetElm("page").scrollTop = 0;
+
+    act("on_es_form_reset: end");
+}
+
+
+
+function reset_marked_lines() {
+
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+
+        if (is_selected_line(seq)) {
+            var item_ctl = get_sub_control("id", seq);
+            $(item_ctl).attr("data-sel_id", null).attr("placeholder", null);
+            reset_item_line(seq, line_item_id(seq), line_unit(seq));
+        }
+    };
+
+    es_doc_recalc();
+    GetElm("page").scrollTop = 0;
+    act("reset_marked_lines: end");
+}
+
+function return_some_items() {
+
+    h$("discount").val('');
+    h$("net_amount").val('');
+    h$("paid").val('');
+    h$("rem_amount").val('');
+    h$("price").val('');
+
+    
+
+    reset_lines_qty(true);
+}
+
+
+function reset_lines_qty(all) {
+    
+    for (var seq = 0; seq < es_doc_line_count; seq++) {
+        if (all || is_selected_line(seq)) 
+            $(get_sub_control("uc", seq)).val(""); 
+        
+    };
+
+    es_doc_recalc();
+    GetElm("page").scrollTop = 0;
+
+    
+}
+
+
+function es_doc_get_tools() {
+
+  //  hs.msg.removeAll();
+
+    var t = '';
+
+    // t += "<div style='margin: 5px' class='inline-menu'>";
+    t += "<b class='title'>جلب الأصناف</b>";
+    t += hs.link("إختيار الأصناف", "js:show_items_multi_pick()", '');
+    t += hs.link("جلب الأصناف من قائمة الإختيار", "js:show_lines_multi_pick('es-item&init-values=y&i-item_status=1','items','id',true)", "icon-checklist");
+    t += hs.link("جلب الأصناف من مستند آخر", "js:copyItems(0)", "icon_down");
+    t += hs.link("نسخ الأصناف من ملف اكسل", "js:pasteItems()", "icon-excel");
+
+    t += "<b class='title'>إجراءات على الفاتورة</b>";
+    t += hs.link("تحديث الأسعار", "js:ConfirmUrl('js:es_doc_reset_prices()','تغيير الأسعار في المستند بالأسعار المحددة في بيانات الأصناف')");
+
+    t += hs.link("تغيير عملة المستند إلى المحلي", "js:show_change_doc_crncy_dlg()");
+    
+    
+    t += hs.link("حذف كل الأصناف من الفاتورة", "js:on_es_form_reset()", "icon_del", '', hs.R.sure);
+    t += hs.link("حذف الأصناف التي بدون كميات", "js:reset_zero_qty_lines()", "icon_del", '', hs.R.sure)
+    t += hs.link("حذف الأصناف المحددة", "js:reset_marked_lines()", "icon_del", '', hs.R.sure)
+   // t += hs.link("حذف الأصناف غير المحددة", "js:reset_lines_except_marked()", "icon_del", '', hs.R.sure)
+
+    t += hs.link("تصفير كميات الأصناف", "js:reset_lines_qty(true)", '', '', hs.R.sure)
+    t += hs.link("تصفير كميات الأصناف المحددة فقط", "js:reset_lines_qty(false)", '', '', hs.R.sure)
+    
+  //  t += hs.link("تصفير كميات الأصناف غير المحددة", "js:reset_lines_qty_except_marked()", '', '', hs.R.sure)
+
+    t += hs.link("عكس تحديد الأصناف", "js:reverse_lines_mark()")
+    
+        
+    t += hs.link("تحديث بيانات الإجمالي", "js:es_doc_recalc()", '', '', hs.R.sure);
+
+    t += "<b class='title'>طول الفاتورة</b>";
+    t += hs.link("20 صنف", "js:DoSubmit('refresh','20')", "icon_list");
+    t += hs.link("50 صنف", "js:DoSubmit('refresh','50')", "icon_list");
+    t += hs.link("100 صنف", "js:DoSubmit('refresh','100')", "icon_list");
+    //t += "</div>";
+            
+            
+    
+
+    return t;
+}
+
+
+function on_area_ctrl_change(e) {
+  //  hs.msg.toast("ctrl changed");
+
+    var shape = hs.safe.parseInt($(e).val());
+    if ($(e).is("SELECT")) {
+        if (shape == 2) {
+            $("#w2r").hide();
+            $("#w1t").text("القطر");
+        }
+        else {
+            $("#w2r").show();
+            $("#w1t").text("البعد الأول");
+        }
+
+        $("#_w1").focus();
+    };
+
+    calc_area(null,null);
+
+}
+
+function calc_area(area_e, note_e) {
+
+    var show_err = area_e != null
+
+    var shape = hs.safe.parseInt($("#_shape").val()), cnt = hs.safe.parseInt($("#_cn").val());
+    var w1 = hs.safe.parseFloat($("#_w1").val()), w2 = hs.safe.parseFloat($("#_w2").val());
+    var w1u = hs.safe.parseFloat($("#_w1u").val()), w1u_t = " " + $("#_w1u option:selected").text();
+    var w2u = hs.safe.parseFloat($("#_w2u").val()), w2u_t = " " + $("#_w2u option:selected").text();
+    
+    var w1m = w1 / w1u, w2m = w2 / w2u;
+
+    if (shape == 0 || w1m <= 0 || cnt <= 0 || (shape == 1 && w2 <= 0)) {
+        if (show_err)
+            return "بيانات غير مناسبة للمساحة";
+        else
+            return null;
+    };
+
+    var area = 0;
+    var memo = "";
+
+    if (shape == 1) {
+        memo = "الأبعاد: ";
+        if (w1u == w2u)
+            memo += w1 + " × " + w2 + w1u_t;
+        else
+            memo += w1 + w1u_t + " × " + w2 + w2u_t;
+
+        area = w1m * w2m;
+    }
+    else
+        if (shape == 2) {
+            memo = "دائري بقطر " + w1 + w1u_t;
+            w1m = w1m / 2;
+            area = ((22 / 7) * (w1m * w1m));
+        }
+
+
+
+    area = hs.safe.round(area, 3);
+
+
+    memo += " (" + area + " م2)" + " العدد: " + cnt;
+
+    // total area
+   var total_area = hs.safe.round(cnt * area, 3);
+
+   $("#_ua").text(area.toString());
+   $("#_ta").text(total_area.toString());
+
+
+    if (area_e != null) {
+        h$(area_e).val(total_area.toString());
+        h$(note_e).val(memo);
+        on_item_price_changed(area_e);
+        // hs.msg.toast(memo, 15);
+        hs.msg.updated(area_e);
+    } else {
+        $("#inp_box_text").val(memo);
+    }
+
+    return null;
+}
+
+function show_area_calc_dlg(area_e, note_e) {
+
+    area_e = h$(area_e);
+
+
+    var ulist_fmt = "<tr id='w{0}r'><td id='w{0}t'>{1}</td><td><input class='flds round-border lft' style='width: 100px;' id='_w{0}' type='text' value='' onchange='on_area_ctrl_change(this)'/></td><td><select id='_w{0}u' class='lst' style='width:100px;' onchange='on_area_ctrl_change(this)'><option selected='selected' value='1'>متر</option><option value='100'>سم</option><option value='39.37'>انش</option></select></td></tr>";
+
+    var s = '';
+    s += "<table class='rep_tab'>";
+    s += "<tr><td>العدد</td><td colspan='2'><input class='flds round-border lft' style='width: 100px;' id='_cn' type='text' value='1' onchange='on_area_ctrl_change(this)'/></td></tr>"
+    s += "<tr><td>الشكل</td><td colspan='2'><select id='_shape' class='lst' style='width:200px;' onchange='on_area_ctrl_change(this)'><option selected='selected' value='1'>مستطيل</option><option value='2'>دائري</option></select></td></tr>";
+    s += ulist_fmt.f("1", "البعد الأول");
+    s += ulist_fmt.f("2", "البعد الثاني");
+
+    s += "<tr class='total'><td colspan='3'>المساحة&nbsp;</td></tr>"
+
+    s += "<tr class='totalx'><td>مساحة الوحدة</td><td id='_ua' class='ui-hl'></td><td>متر مربع</td></tr>"
+    s += "<tr class='totalx'><td>إجمالي المساحة</td><td id='_ta' class='ui-hl'></td><td>متر مربع</td></tr>"
+
+    s += "</table><br/><hr/>";
+    s += "الوصف";
+
+
+    hs.inputBox
+        .init(400, 500, "_cn")
+        .show(false, '', 'حساب المساحة', s, '<hr/>', null, '', '', function (t) {
+
+            return calc_area(area_e, note_e);
+
+
+        });
+
+
+}
+
+
+function get_first_vacant_doc_line_seq(fld_key, sub_fld_key) {
+
+    
+    
+    var i = 0;
+
+    while (1) {
+       
+        var eid = getLineDocControlId(fld_key, sub_fld_key, i);
+        var cur_val = hs.fm.val(eid);
+        if (hs.isEmpty(cur_val))
+            return i;
+
+        i++;
+    };
+
+}
+
+function line_finditem(item_id) { // return seq
+
+    var b = 0; // consequtive blank
+
+    for (var i = 0; i < es_doc_line_count; i++) {
+        var l_item_id = line_item_id(i);
+
+        if (hs.isEmpty(l_item_id))
+            b++;
+        else {
+            if (l_item_id == item_id)
+                return i;
+            b = 0;
+        }
+
+        if (b == 5)
+            break; 
+    };
+
+    return -1; // not found
+
+}
+
+function fill_doc_line_items(fld_key, sub_fld_key, csv, apply_select, chk_existing) {
+
+    if (arguments.length < 4)
+        apply_select = false;
+
+    if (arguments.length < 5)
+        chk_existing = false;
+
+    var arr_vals = csv.split(';');
+
+    var l = get_first_vacant_doc_line_seq(fld_key, sub_fld_key);
+    var i = 0, eid;
+
+    for (var i = 0; i < arr_vals.length; i++) {
+
+        var item_id = arr_vals[i];
+        if (chk_existing) {
+            var idx = line_finditem(item_id);
+            if (idx >= 0) {
+                var m = item_id + " : موجود مسبقا @" + (idx + 1);
+                eid = getLineDocControlId(fld_key, sub_fld_key, idx);
+
+                hs.ui.scrollTo(h$(eid).offsetParent(), $(".item-list-body")[0]);
+
+                hs.msg.tip(eid, m, 10);
+                hs.msg.toast(m);
+                continue;
+            }
+        }
+
+        eid = getLineDocControlId(fld_key, sub_fld_key, l++);
+
+        if (!hs.e.exists(eid)) {
+            return "العناصر المختارة أكثر من عدد الأسطر المتوفرة: " + i;
+            
+        };
+        
+
+        var cur_val = hs.fm.val(eid);
+        hs.fm.val(eid, item_id);
+
+        if (apply_select)
+           getExList(eid).select();
+    };
+
+    return null;
+}
+    
+function fill_doc_line_items_from_select_fld(fld_key, sub_fld_key, sel_fld) {
+    
+   var err = fill_doc_line_items(fld_key, sub_fld_key, h$(sel_fld).val());
+
+    if (err == null) {
+        DoSubmit('refresh');
+    }
+    else
+        hs.msg.error(err + K.hr + hs.link(hs.R.OK, "js:DoSubmit('refresh')", "btn link_icon icon_go"));
+}
+
+
+
+function show_lines_multi_pick(fm_id, lines_fld, line_fld_key,auto_run) {
+
+    var cont = "<div class='fld-tools'><input name='select_list' id='select_list' type='text' value='' class='flds' style='width: 300px;' placeholder='القائمة مفصولة بـ ;' maxLength=16000/><div class='tools'><a id='ms-find' class='icon_find icon' title='اختيار' href='javascript:ShowDlg(\"/app/fms/?fm={0}&fm-mode=&batch-mode=yes&cmd-mode=select&cmd=find&ret-sel-to=select_list\")'>&nbsp;</a><a id='ms-apply' title='تنزيل' class='icon_down icon' href='javascript:fill_doc_line_items_from_select_fld(\"{1}\",\"{2}\",\"select_list\")'>&nbsp;</a></div></div>".f(fm_id, lines_fld, line_fld_key);
+
+    cont += K.hr + "قم بإدخال القائمة أو استخدم العدسة للإختيار";
+    cont += K.br + "استخدم زر التنزيل لجلب القائمة";
+    hs.msg.fix(cont, true);
+
+    if (auto_run) {
+        hs.fm.select_dlg_callback = function (e, id_val, name_val) {
+            $("#select_list").val(id_val);
+            fill_doc_line_items_from_select_fld(lines_fld, line_fld_key, "select_list");
+            CloseDlg();
+        };
+
+        hs.clickLink('ms-find');
+    }
+}
+
+function show_items_multi_pick() {
+
+    var cont = "";
+    cont = "<input name='item_multi_select' id='item_multi_select' type='text' value='' class='flds' style='width: 300px;' data-sel_id='' maxLength=99/>";
+    cont += K.hr + "قم بالبحث واختيار الأصناف لإضافتها إلى القائمة";
+
+
+
+    hs.msg.callout(cont, null, 0,null,800,2,'ms-itm'); // true);
+
+    var fldObj = $('#item_multi_select').exList({
+        codelist: es_cl_items_bc,
+        select_only: true,
+        support_bc: false, // true
+        on_item_changed: null,
+        on_focus: on_item_list_open,
+        scroll_into_view: false,
+        multi_select: true,
+        max_list_item_count: 1000
+    }).minLen(1).css("min-width", "100px"); 
+
+    $("#item_multi_select").focus();
+   
+}
+
+function ss_on_page_load() {
+
+  //  setTimeout(function () { $("input[type='checkbox']").on('click', function () { setTimeout(function () { DoSubmit(); }, 100) }) }, 1000);
+
+    
+}
+
+function book_table(hall, table, doc_no) {
+
+    if (arguments.length < 3)
+        doc_no = null;
+    // init-values=y&i-doc_no=11
+  //  var url = "/app/fms/?fm=es-sale-pos&fm-mode=pos-hos-waiter&fk0=" + hall +"&fk1=" + table;
+
+    var url = "/app/fms/?fm=es-sale-pos&fm-mode=pos-hos-waiter&init-values=y&init-fix=y&i-cod02=" + hall + "&i-cod01=" + table;
+
+    url += hs.isEmpty(doc_no) ? "&cmd=add" : "&cmd=view&id=" + doc_no; // &dlg-auto-close=y
+
+    dlg_callback = hs.page.refresh;
+    ShowDlgB(url);
+}
+
+
+// /app/s/plugins/tinymce/tinymce.min.js
+
+function showHtmlEditor(a, eId) {
+    $(a).hide();
+   
+
+            tinymce.init({
+                selector: '#' + eId,
+                body_class: 'html-editor-body',
+                height: 300,
+                directionality: 'rtl',
+                language: 'ar',
+
+                formats: { bold: { inline: 'b' } },
+                allow_script_urls: true,
+                relative_urls: false,
+                remove_script_host: false,
+                convert_urls: false,
+                menubar: '',
+                extended_valid_elements: 'i[class],span[class],b[class]',
+                plugins: [
+                    'advlist lists autolink image charmap preview link',
+                    'searchreplace visualblocks code fullscreen',
+                    'media table contextmenu paste code colorpicker '
+                ],
+
+
+                fontsize_formats: '7pt 8pt 10pt 12pt 14pt 18pt 24px 36pt 48pt 72pt',
+                toolbar: 'styleselect | fontsizeselect | bold italic forecolor backcolor removeformat | alignleft aligncenter alignright alignjustify  | outdent indent | link image table numlist bullist | code fullscreen',
+                style_formats: [
+                    { title: 'Page Title', block: 'div', classes: 'cms-page-title' },
+                    { title: 'Page Inline Title', block: 'div', classes: 'cms-inline-title' },
+                    { title: 'inline title', inline: 'span', classes: 'inline_title' },
+                    { title: 'Instructions', block: 'div', classes: 'inst', wrapper: true },
+                    { title: 'Hint', block: 'div', classes: 'hint', wrapper: true },
+                    { title: 'Inline note', inline: 'span', classes: 'note' }
+                ]
+                ,
+                content_css: [
+                    '/app/s/css/hs_app.css',
+                    '/app/s/css/hs_app_ar.css',
+                    '/web/s/cms_ar.css'
+                ]
+
+            });
+        
+}
+
+

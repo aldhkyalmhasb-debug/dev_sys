@@ -1,0 +1,289 @@
+
+BODY {
+    direction: rtl; 
+    text-align: right;
+   
+}
+
+.mirror,.mir { text-align: left;}
+
+.float, .dir-flt {
+    float: right;
+}
+
+.mir-flt, ul.fm-tabs-nav li.mir-flt {
+   float: left;
+}
+
+
+
+    .lst {
+    padding-left: 0px;
+}
+
+#container {
+    text-align: right;
+}
+
+.header {
+    text-align: right;
+}
+
+.pp_link, .pp_item {
+     background-position: right 4px;
+     padding: 0px 20px 0px 2px;
+}
+
+
+
+.link_icon {
+    padding: 5px 25px 5px 5px;  
+	
+    background-position: 98% center;
+}
+
+
+
+.link_cmd {
+    padding: 5px 25px 5px 5px;
+    background-position: right center;
+}
+
+
+
+.ttip:hover SPAN.tooltip {
+    right: 0px;
+}
+
+.has-icon {
+         padding-right: 25%;  
+	     background-position: right center;
+}
+
+input.has-icon, span.has-icon {
+    padding-right: 5px;
+    padding-left: 20px;
+    background-position: 5px center;
+}
+
+span.has-icon {
+    padding-left: 5px;
+    padding-right: 20px;
+    background-position: right center;
+    xborder: 1px solid red;
+}
+
+.inst {
+    background-position: 99% center;
+    padding-left: 10px;
+   
+}
+
+.ex-list {
+    background-position: 2% center;
+}
+
+
+/* override jquery theme*/
+.ui-tabs { direction: rtl;  }
+.ui-tabs .ui-tabs-nav li.ui-tabs-selected,
+.ui-tabs .ui-tabs-nav li.ui-state-default {float: right; }
+.ui-tabs .ui-tabs-nav li a { float: right; }
+
+.ui-tabs .ui-tabs-nav { }
+.ui-tabs INPUT.flds, .ui-tabs SELECT {font-family: inherit;}
+
+
+.input_icon
+{
+    margin-left: 2px;
+    margin-right: -30px;
+   
+}
+
+.qv_show_id {
+    margin-left: 10px;
+}
+
+.popup-box DIV.sub-menu-box {
+        background-position: left center;
+    }
+
+DIV.sub-menu-box:hover SPAN.popup-sub-menu {
+    right: 25%;
+    right: 50%;
+    
+}
+
+DIV.sub-menu-box.flip:hover SPAN.popup-sub-menu {
+     right: initial !important;
+     left: 95%;
+}
+
+.inline-menu-container DIV.popup-box.sub-menu-box span.popup-sub-menu {
+    right: 40px;
+    right: 50%;
+    
+}
+
+SPAN.popup-menu A, SPAN.popup-menu b.title, SPAN.popup-menu a.title, popup-box DIV.sub-menu-box {
+    padding: 5px 25px 5px 5px;
+    background-position: right center;
+}
+
+   /* SPAN.popup-menu b.title.a {
+        padding: 0 5px 0 0 !important;
+    }
+       */
+
+    SPAN.popup-menu a.title {
+        background-position: 97% center;
+        padding-right:40px;
+    }
+
+.sub-menu-box.clkd > SPAN.popup-sub-menu {
+    /*right: 25% !important;*/
+}
+
+.easyform .photo {
+    right: initial;
+    left:0;
+    
+}
+
+.box-close-button {
+    right: initial;
+    left: 3px;
+}
+
+
+.inline-menu a, .xfm-footer-links a
+{
+    background-position: right center;
+    padding: 0px 5px;
+    padding-right: 25px;
+
+}
+
+
+.ui-timepicker-viewport{margin-right:-25px; }
+
+
+
+.side-panel {
+    left:initial;
+    
+}
+
+.fm-browse-item {
+    right: 300px;
+    right:360px;
+    left: 0;
+    
+}
+
+.fm-tree-item {
+    right: 400px;
+    left: 0;
+}
+
+
+ div.tree-sub-item {
+   
+    padding-left: 0;
+    
+}
+
+
+.icon_back {background-image: url(../images/icons/arrow_right.gif) !important}
+.icon_next {background-image: url(../images/icons/go_left.png) !important}
+.icon_prev {background-image: url(../images/icons/go_right.png) !important}
+.icon_sel_item, .icon-main-menu {background-image: url(../images/icons/sel_right.png) !important}
+.icon_run {background-image: url(../images/icons/run_rtl.gif) !important}
+
+
+  .tree a.l1 {
+        margin-right: 1px;
+        margin-left: 0;
+      
+    }
+
+    .tree a.l2 {
+        margin-right: 20px;
+        margin-left: 0;
+    }
+
+    .tree a.l3 {
+        margin-right: 40px;
+        margin-left: 0;
+    }
+
+    .tree a.l4 {
+        margin-right: 60px;
+        margin-left: 0;
+    }
+
+    .tree a.l5 {
+        margin-right: 80px;
+        margin-left: 0;
+    }
+
+     .tree a.l6 {
+        margin-right: 100px;
+        margin-left: 0;
+    }
+
+    .tree a.l7 {
+        margin-right: 120px;
+        margin-left: 0;
+    }
+
+    .tree a.l8 {
+        margin-right: 140px;
+        margin-left: 0;
+        
+    }
+
+.fld-tools div.tools {
+    left: 0;
+    right: initial;
+}
+
+
+
+
+.side-panel.auto-hide {
+    z-index: 400;
+}
+
+.fm-browse-item.auto-hide  {
+    right: 50px;
+    left: 0;
+
+    
+}
+
+
+.grid-menu-box .item {
+    background-position: 90% center;
+}
+
+.fixed-bottom-tool {
+    right: initial;
+    left: 0;
+}
+
+
+@media screen {
+    /*sticky header*/
+    table.rep_tab th:last-child,
+    table.rep_tab td:last-child {
+        border-left: 1px solid #ccc !important;
+    }
+
+
+
+    table.rep_tab tr.head td {
+        border-top: 1px solid #ccc !important;
+    }
+}
