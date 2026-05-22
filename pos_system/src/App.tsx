@@ -23,6 +23,18 @@ import ItemsBrowse from './ItemsBrowse';
 import ItemsServices from './ItemsServices';
 import ItemsCostChange from './ItemsCostChange';
 import InventoryIssueSearch from './InventoryIssueSearch';
+import InventoryIssueNew from './InventoryIssueNew';
+import InventoryIssueList from './InventoryIssueList';
+import InventoryIssueBrowse from './InventoryIssueBrowse';
+import InventorySupplyMain from './InventorySupplyMain';
+import InventorySupplyNew from './InventorySupplyNew';
+import InventorySupplySearch from './InventorySupplySearch';
+import InventorySupplyList from './InventorySupplyList';
+import InventorySupplyBrowse from './InventorySupplyBrowse';
+import InventoryTransferMain from './InventoryTransferMain';
+import InventoryTransferNew from './InventoryTransferNew';
+import InventoryTransferSearch from './InventoryTransferSearch';
+import InventoryTransferList from './InventoryTransferList';
 
 export default function App() {
   const [activeRoute, setActiveRoute] = useState('dashboard');
@@ -202,10 +214,10 @@ export default function App() {
                     <div className="dropdown-submenu-top">
                       <div className="dropdown-section-title">أوامر الصرف المخزني</div>
                       <ul>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>إستعراض</span><LayoutGrid size={14} color="#6c757d" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-issue-new'); }}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-issue-search'); }}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-issue-list'); }}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-issue-browse'); }}><span style={{ marginLeft: '10px' }}>إستعراض</span><LayoutGrid size={14} color="#6c757d" /></a></li>
                       </ul>
                     </div>
                   </li>
@@ -214,10 +226,11 @@ export default function App() {
                     <div className="dropdown-submenu-top">
                       <div className="dropdown-section-title">أوامر التوريد المخزني</div>
                       <ul>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>إستعراض</span><LayoutGrid size={14} color="#6c757d" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-supply-main'); }}><span style={{ marginLeft: '10px' }}>الرئيسية</span><LayoutGrid size={14} color="#3c8dbc" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-supply-new'); }}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-supply-search'); }}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-supply-list'); }}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-supply-browse'); }}><span style={{ marginLeft: '10px' }}>إستعراض</span><LayoutGrid size={14} color="#6c757d" /></a></li>
                       </ul>
                     </div>
                   </li>
@@ -226,9 +239,10 @@ export default function App() {
                     <div className="dropdown-submenu-top">
                       <div className="dropdown-section-title">أمر تحويل بضاعة</div>
                       <ul>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
-                        <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-transfer-main'); }}><span style={{ marginLeft: '10px' }}>الرئيسية</span><LayoutGrid size={14} color="#3c8dbc" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-transfer-new'); }}><span style={{ marginLeft: '10px' }}>جديد</span><FilePlus size={14} color="#28a745" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-transfer-search'); }}><span style={{ marginLeft: '10px' }}>بحث</span><Search size={14} color="#6c757d" /></a></li>
+                        <li><a href="#" onClick={(e) => { e.preventDefault(); setActiveRoute('inventory-transfer-list'); }}><span style={{ marginLeft: '10px' }}>عرض القائمة</span><List size={14} color="#3c8dbc" /></a></li>
                         <li><a href="#" onClick={(e) => e.preventDefault()}><span style={{ marginLeft: '10px' }}>إستعراض</span><LayoutGrid size={14} color="#6c757d" /></a></li>
                       </ul>
                     </div>
@@ -749,6 +763,18 @@ export default function App() {
         {activeRoute === 'items-services' && <ItemsServices onNavigate={setActiveRoute} />}
         {activeRoute === 'items-cost-change' && <ItemsCostChange onNavigate={setActiveRoute} />}
         {activeRoute === 'inventory-issue-search' && <InventoryIssueSearch onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-issue-new' && <InventoryIssueNew onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-issue-list' && <InventoryIssueList onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-issue-browse' && <InventoryIssueBrowse onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-supply-main' && <InventorySupplyMain onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-supply-new' && <InventorySupplyNew onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-supply-search' && <InventorySupplySearch onNavigate={setActiveRoute} onClose={() => setActiveRoute('inventory-supply-main')} />}
+        {activeRoute === 'inventory-supply-list' && <InventorySupplyList onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-supply-browse' && <InventorySupplyBrowse onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-transfer-main' && <InventoryTransferMain onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-transfer-new' && <InventoryTransferNew onNavigate={setActiveRoute} />}
+        {activeRoute === 'inventory-transfer-search' && <InventoryTransferSearch onNavigate={setActiveRoute} onClose={() => setActiveRoute('inventory-transfer-main')} />}
+        {activeRoute === 'inventory-transfer-list' && <InventoryTransferList onNavigate={setActiveRoute} />}
       </main>
     </div>
   );

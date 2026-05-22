@@ -2928,3 +2928,39 @@
     margin-bottom: 10px;
   }
 }
+
+/* ============================================
+   Inventory Issue New (Stock Issue Order)
+   ============================================ */
+
+.pos-title-bar {
+  background: linear-gradient(to bottom, #f8c471, #f39c12);
+  color: #fff;
+  padding: 8px 15px;
+  font-weight: bold;
+  font-size: 14px;
+  text-align: center;
+  border-bottom: 2px solid #d38409;
+  direction: rtl;
+}
+
+.pos-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.pos-input-wrap input {
+  padding-left: 28px;
+  width: 100%;
+}
+
+.pos-input-icon {
+  position: absolute;
+  left: 6px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  color: #007bff;
+}

@@ -343,6 +343,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { 
               name: 'أوامر التوريد المخزني',
               subItems: [
+                { name: 'الرئيسية', icon: <LayoutGrid size={14} color="#3c8dbc" /> },
                 { name: 'جديد', icon: <FilePlus size={14} color="#28a745" /> },
                 { name: 'بحث', icon: <Search size={14} color="#6c757d" /> },
                 { name: 'عرض القائمة', icon: <List size={14} color="#3c8dbc" /> },
@@ -352,6 +353,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             { 
               name: 'أمر تحويل بضاعة إلى مخزن آخر',
               subItems: [
+                { name: 'الرئيسية', icon: <LayoutGrid size={14} color="#3c8dbc" /> },
                 { name: 'جديد', icon: <FilePlus size={14} color="#28a745" /> },
                 { name: 'بحث', icon: <Search size={14} color="#6c757d" /> },
                 { name: 'عرض القائمة', icon: <List size={14} color="#3c8dbc" /> },
@@ -706,7 +708,31 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                                   } else if (item.name === 'أوامر الصرف المخزني' && sub.name === 'بحث') {
                                     onNavigate('inventory-issue-search');
                                   } else if (item.name === 'أوامر الصرف المخزني' && sub.name === 'جديد') {
-                                    onNavigate('inventory-issue-search'); // Default to search for now, or to a new screen later
+                                    onNavigate('inventory-issue-new');
+                                  } else if (item.name === 'أوامر الصرف المخزني' && sub.name === 'عرض القائمة') {
+                                    onNavigate('inventory-issue-list');
+                                  } else if (item.name === 'أوامر الصرف المخزني' && sub.name === 'إستعراض') {
+                                    onNavigate('inventory-issue-browse');
+                                  } else if (item.name === 'أوامر التوريد المخزني' && sub.name === 'الرئيسية') {
+                                    onNavigate('inventory-supply-main');
+                                  } else if (item.name === 'أوامر التوريد المخزني' && sub.name === 'جديد') {
+                                    onNavigate('inventory-supply-new');
+                                  } else if (item.name === 'أوامر التوريد المخزني' && sub.name === 'بحث') {
+                                    onNavigate('inventory-supply-search');
+                                  } else if (item.name === 'أوامر التوريد المخزني' && sub.name === 'عرض القائمة') {
+                                    onNavigate('inventory-supply-list');
+                                  } else if (item.name === 'أوامر التوريد المخزني' && sub.name === 'إستعراض') {
+                                    onNavigate('inventory-supply-browse');
+                                  } else if (item.name === 'أمر تحويل بضاعة إلى مخزن آخر' && sub.name === 'الرئيسية') {
+                                    onNavigate('inventory-transfer-main');
+                                  } else if (item.name === 'أمر تحويل بضاعة إلى مخزن آخر' && sub.name === 'جديد') {
+                                    onNavigate('inventory-transfer-new');
+                                  } else if (item.name === 'أمر تحويل بضاعة إلى مخزن آخر' && sub.name === 'بحث') {
+                                    onNavigate('inventory-transfer-search');
+                                  } else if (item.name === 'أمر تحويل بضاعة إلى مخزن آخر' && sub.name === 'عرض القائمة') {
+                                    onNavigate('inventory-transfer-list');
+                                  } else if (item.name === 'أمر تحويل بضاعة إلى مخزن آخر' && sub.name === 'إستعراض') {
+                                    onNavigate('inventory-transfer-browse');
                                   } else if (sub.name.includes('فاتورة مبيعات') || (item.name === 'فواتير المبيعات' && sub.name === 'جديد') || sub.name === 'فاتورة مبيعات - كاشير' || sub.name === 'طلب مبيعات - كاشير') {
                                     onNavigate('pos');
                                   }
